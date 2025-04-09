@@ -1,0 +1,373 @@
+#version 460 core
+
+layout (local_size_x = 8) in;
+
+struct Particle {
+    vec4 x;  // particle position
+    vec4 v;  // particle velocity
+    float w; // particle inverse mass
+    int t;   // particle type. one of HAIR, SOLID, or FLUID
+};
+
+struct BucketData {
+    int startIndex;
+    int particlesInBucket;
+    int nextParticleSlot;
+    int pd;
+};
+
+layout(std430, binding=0) buffer Particles {
+    Particle particles[];
+};
+
+layout(std430, binding=1) buffer PredictedPositions {
+    vec4 ps[];
+};
+
+layout(std430, binding=2) buffer Densities {
+    float densities[];
+};
+
+layout(std430, binding=3) buffer Lambdas {
+    float lambdas[];
+};
+
+layout(std430, binding=4) buffer CurvatureNormals {
+    vec4 curvatureNormals[];
+};
+
+layout(std430, binding=5) buffer GridStartIndices {
+    BucketData startIndices[];
+};
+
+layout(std430, binding=6) buffer GridCellEntries {
+    int cellEntries[];
+};
+
+layout(std430, binding=7) buffer OmegasBuffer {
+    vec4 omegas[];
+};
+
+#define APPLY_EXTERNAL_FORCES 0
+#define COMPUTE_DENSITIES 1
+#define COMPUTE_VISCOSITES 2
+#define PREDICT 3
+#define DENSITY_CONSTRAINT 4
+#define UPDATE_VELOCITIES 5
+
+/* Particle types */
+int HAIR = 0;
+int SOLID = 1;
+int FLUID = 2;
+
+// todo: use uniform buffer objects
+
+layout(location = 0) uniform int stage;      // the stage for the simulation
+layout(location = 1) uniform float dt;       // delta time
+layout(location = 2) uniform float gravity;  // gravity
+layout(location = 4) uniform float smoothingRadius;
+layout(location = 5) uniform float collisionDamping;
+layout(location = 6) uniform float restDensity;
+layout(location = 7) uniform float restDensityInv;
+layout(location = 8) uniform float relaxationEpsilon;
+layout(location = 9) uniform float SOR;  // >= 1.9 makes it more accurate but weirdly bouncy, >= 2 is too much
+layout(location = 10) uniform float f_cohesion;
+layout(location = 11) uniform float f_curvature;
+layout(location = 12) uniform float f_viscosity;
+layout(location = 13) uniform float f_adhesion;
+layout(location = 14) uniform float boundaryDensityCoeff;
+
+layout(location = 15) uniform float gridCellSize;
+
+layout(location = 16) uniform int nFluidParticles;
+layout(location = 17) uniform int nTotalParticles;
+
+layout(location = 18) uniform float particleRadius;
+layout(location = 19) uniform vec3 bounds;
+layout(location = 20) uniform vec3 centre;
+layout(location = 21) uniform vec3 gravityDir;
+layout(location = 22) uniform int substepCount;
+
+
+/* Grid functions */
+ivec3 posToCell(vec4 v);
+uint flatten(ivec3 cell);
+
+/* Kernels */
+float poly6Kernel(vec3 r, float h);
+vec3 poly6KernelGrad(vec3 r, float h);
+float spikyKernel(vec3 r, float h);
+vec3 spikyKernelGrad(vec3 r, float h);
+vec3 AI12STKernelNorm(vec3 r, float h);
+vec3 AI12AdhesionKernelNorm(vec3 r, float h);
+
+/* Other functions */
+// Compute the squared length of `a`
+float sqLen(vec3 v) {
+    return dot(v, v);
+}
+// clamp a vector in a range
+vec3 clampV(vec3 v, vec3 lo, vec3 hi) {
+    vec3 vv = v;
+    for (int i = 0; i < 3; ++i) {
+        if (v[i] < lo[i]) vv[i] = lo[i];
+        if (v[i] > hi[i]) vv[i] = hi[i];
+    }
+    return vv;
+}
+
+void applyExternalForces(int i) {
+    // gravity
+    if (particles[i].t == FLUID) particles[i].v += vec4(gravityDir * dt, 0);
+}
+
+// todo: enforce consistency with using ps[i] vs particles[i].x for pre-prediction steps
+void computeViscosity(int i) {
+    vec3 nV = vec3(0);
+    float mass_i = 1.f / particles[i].w;
+    ivec3 cell = posToCell(ps[i]);
+    int minX = max(cell.x - 1, 0);
+    int maxX = minX + 2;
+    int minY = max(cell.y - 1, 0);
+    int maxY = minY + 2;
+    int minZ = max(cell.z - 1, 0);
+    int maxZ = minZ + 2;
+    for (int x = minX; x <= maxX; ++x) {
+        for (int y = minY; y <= maxY; ++y) {
+            for (int z = minZ; z <= maxZ; ++z) {
+                ivec3 ncell = {x, y, z};
+                uint key = flatten(ncell);
+                int start = startIndices[key].startIndex;
+                int end = startIndices[key].startIndex + startIndices[key].particlesInBucket;
+                for (int s = start; s < end; ++s) {
+                    int j = cellEntries[s];
+                    vec3 vji = vec3(particles[j].v - particles[i].v);
+                    vec3 vij = vec3(particles[i].v - particles[j].v);
+                    vec3 xij = vec3(particles[i].x - particles[j].x);
+                    if (particles[j].t == FLUID) {
+                        /* [SB12], Eq. 2 */
+                        nV += vji * (1 / (particles[j].w * densities[i])) * spikyKernel(xij, smoothingRadius); // XSPH viscosity
+                    } else {
+                        /* [AI12], Eq.11, 13-14 */
+                        float fluidRigidVisc = (smoothingRadius * dt) / (2 * densities[i]);  // viscosity coefficient multiplied in later
+                        float bigPi = -fluidRigidVisc *
+                                        (min(dot(vij, xij), 0.f)) / (sqLen(xij) + smoothingRadius * smoothingRadius * 0.01);
+                        nV += -(mass_i) *
+                                boundaryDensityCoeff *
+                                bigPi *
+                                spikyKernelGrad(vec3(particles[i].x - particles[j].x), smoothingRadius);
+                    }
+                }
+            }
+        }
+    }
+    particles[i].v += vec4(f_viscosity * nV, 0);
+}
+
+void computeDensity(int i) {
+    float density = 0;
+    ivec3 cell = posToCell(ps[i]);
+    int minX = max(cell.x - 1, 0);
+    int maxX = minX + 2;
+    int minY = max(cell.y - 1, 0);
+    int maxY = minY + 2;
+    int minZ = max(cell.z - 1, 0);
+    int maxZ = minZ + 2;
+    for (int x = minX; x <= maxX; ++x) {
+        for (int y = minY; y <= maxY; ++y) {
+            for (int z = minZ; z <= maxZ; ++z) {
+                ivec3 ncell = {x, y, z};
+                uint key = flatten(ncell);
+                int start = startIndices[key].startIndex;
+                int end = startIndices[key].startIndex + startIndices[key].particlesInBucket;
+                for (int s = start; s < end; ++s) {
+                    int j = cellEntries[s];
+                    density += (1.f / particles[j].w) *
+                                poly6Kernel(vec3(ps[i] - ps[j]), smoothingRadius) *
+                                (particles[j].t == FLUID ? 1 : boundaryDensityCoeff);
+                }
+            }
+        }
+    }
+
+    densities[i] = density;
+}
+
+float calcConstraint(int i) {
+    /* [UPP13, Eq. 26] */
+    return min((densities[i] * restDensityInv) - 1, 0.f);
+}
+
+vec3 calcConstraintGrad(int i, int j) {
+    if (j == i) {
+        vec3 cGrad = vec3(0);
+        ivec3 cell = posToCell(ps[i]);
+        int minX = max(cell.x - 1, 0);
+        int maxX = minX + 2;
+        int minY = max(cell.y - 1, 0);
+        int maxY = minY + 2;
+        int minZ = max(cell.z - 1, 0);
+        int maxZ = minZ + 2;
+        for (int x = minX; x <= maxX; ++x) {
+            for (int y = minY; y <= maxY; ++y) {
+                for (int z = minZ; z <= maxZ; ++z) {
+                    ivec3 ncell = {x, y, z};
+                    uint key = flatten(ncell);
+                    int start = startIndices[key].startIndex;
+                    int end = startIndices[key].startIndex + startIndices[key].particlesInBucket;
+                    for (int s = start; s < end; ++s) {
+                        int k = cellEntries[s];
+                        cGrad += (1.f / particles[k].w) * spikyKernelGrad(vec3(ps[i] - ps[k]), smoothingRadius);
+                    }
+                }
+            }
+        }
+        return restDensityInv * cGrad;
+    } else {
+        // if (Util::sqDist(ps[i], ps[j]) <= 1e-6) continue;
+        vec3 cGrad = spikyKernelGrad(vec3(ps[i] - ps[j]), smoothingRadius);
+        return -(1.f / particles[j].w) * restDensityInv * cGrad;
+    }
+}
+
+void densityConstraint(int i) {
+    /* Compute lambda values */
+    float imass = 1.f / particles[i].w;  // inverse of an inverse
+    float numer = calcConstraint(i);
+    float denom = 0;
+    vec3 cNorm = vec3(0);
+    vec3 omega = vec3(0);
+    ivec3 cell = posToCell(ps[i]);
+    int minX = max(cell.x - 1, 0);
+    int maxX = minX + 2;
+    int minY = max(cell.y - 1, 0);
+    int maxY = minY + 2;
+    int minZ = max(cell.z - 1, 0);
+    int maxZ = minZ + 2;
+    for (int x = minX; x <= maxX; ++x) {
+        for (int y = minY; y <= maxY; ++y) {
+            for (int z = minZ; z <= maxZ; ++z) {
+                ivec3 ncell = {x, y, z};
+                uint key = flatten(ncell);
+                int start = startIndices[key].startIndex;
+                int end = startIndices[key].startIndex + startIndices[key].particlesInBucket;
+                for (int s = start; s < end; ++s) {
+                    int j = cellEntries[s];
+                    float jmass = 1.f / particles[j].w;
+                    denom += jmass * sqLen(calcConstraintGrad(i, j));
+                    if (particles[j].t != FLUID) continue;
+                    cNorm += jmass * spikyKernelGrad(vec3(ps[i] - ps[j]), smoothingRadius) / densities[j];
+
+                    /* vorticity confinement [MM13, Eq. 15] */
+                    vec3 offs = vec3(particles[j].v - particles[i].v);
+                    omega += cross(offs, spikyKernelGrad(vec3(ps[i] - ps[j]), smoothingRadius));
+                }
+            }
+        }
+    }
+
+    curvatureNormals[i] = vec4(cNorm * smoothingRadius, 0);
+    lambdas[i] = -numer / (denom + relaxationEpsilon + 1e-6f);
+
+    /* Compute density corrections */
+    vec3 deltaP = vec3(0);
+    for (int x = minX; x <= maxX; ++x) {
+        for (int y = minY; y <= maxY; ++y) {
+            for (int z = minZ; z <= maxZ; ++z) {
+                ivec3 ncell = {x, y, z};
+                uint key = flatten(ncell);
+                int start = startIndices[key].startIndex;
+                int end = startIndices[key].startIndex + startIndices[key].particlesInBucket;
+                for (int s = start; s < end; ++s) {
+                    int j = cellEntries[s];
+                    float jmass = 1.f / particles[j].w;
+                    vec3 pij = vec3(ps[i] - ps[j]);
+                    vec3 cGrad = spikyKernelGrad(pij, smoothingRadius);
+
+                    /* tensile pressure correction [MM13, Eq. 13] */
+                    float corr_k = 0.3;
+                    float corr_q_coeff = 0.3f;
+                    vec3 corr_q = smoothingRadius * corr_q_coeff * vec3(1, 0, 0);
+                    int corr_n = 4;
+                    float p6num = poly6Kernel(pij, smoothingRadius);
+                    float p6den = poly6Kernel(corr_q, smoothingRadius);
+                    float corr = -corr_k * pow(p6num / p6den, corr_n);
+                    deltaP += cGrad * (lambdas[i] + lambdas[j] + corr);
+
+                    if (i != j) {
+                        if (particles[j].t == FLUID) {
+                            /* vorticity confinement [MM13, Eq.16] */
+                            vec3 pplus = (imass * vec3(ps[i]) + jmass * vec3(ps[j])) / (imass + jmass);
+                            vec3 eta = pplus - vec3(ps[i]);
+                            vec3 N = (sqLen(eta) > 0) ? normalize(eta) : vec3(0);  // [HLYK08, Eq. 7]
+                            vec3 vorticity = relaxationEpsilon * cross(N, omega);
+                            deltaP += vorticity;
+
+                            /* apply surface tension [AAT13] */
+                            vec3 grad = AI12STKernelNorm(pij, smoothingRadius);                // [AAT13, Eq. 2]
+                            vec3 cohesion = imass * jmass * grad * -f_cohesion;                // [AAT13, Eq. 1]
+                            vec3 curveDiff = vec3(curvatureNormals[i] - curvatureNormals[j]);
+                            vec3 curvature = imass * curveDiff * -f_curvature;                 // [AAT13, Eq. 3]
+                            float K = (2 * restDensity) / (densities[i] + densities[j]);       // [AAT13, Eq. 4]
+                            vec3 surfaceTension = K * (cohesion + curvature);
+                            deltaP += surfaceTension * dt;
+                        } else /* particles[j].t == SOLID || particles[j].t == HAIR */ {
+                            deltaP += f_adhesion * imass * boundaryDensityCoeff * AI12AdhesionKernelNorm(pij, smoothingRadius);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    ps[i] += imass * restDensityInv * vec4(deltaP, 0)/substepCount;
+}
+
+void predictPosition(int i) {
+    ps[i] = particles[i].x + particles[i].v/substepCount * dt;
+    vec3 halfBounds = (bounds - vec3(particleRadius)) / 2.f;
+    ps[i] = vec4(clampV(vec3(ps[i]), centre - halfBounds, centre + halfBounds), 0);
+}
+
+void updateVelocity(int i) {
+    // vec3 halfBounds = (bounds - vec3(particleRadius)) / 2.f;
+    // float ext = 1;
+    // ps[i] = vec4(clampV(vec3(ps[i]), centre - halfBounds*ext, centre + halfBounds*ext), 0);
+
+    if (i < nFluidParticles) {
+        particles[i].v = (ps[i] - particles[i].x) / dt;
+        particles[i].x = ps[i] * SOR + particles[i].x * (1 - SOR);
+        ps[i] = particles[i].x;
+    } else {
+        particles[i].v = vec4(0);  // just in case
+    }
+}
+
+void main() {
+    uint gid = gl_GlobalInvocationID.x;
+    if (gid >= particles.length()) return;
+    int idx = int(gid);
+    if (idx >= particles.length()) return;
+
+    switch(stage) {
+        case APPLY_EXTERNAL_FORCES:
+            applyExternalForces(idx);
+            break;
+        case COMPUTE_DENSITIES:
+            computeDensity(idx);
+            break;
+        case COMPUTE_VISCOSITES:
+            computeViscosity(idx);
+            break;
+        case PREDICT:
+            predictPosition(idx);
+            break;
+        case DENSITY_CONSTRAINT:
+            densityConstraint(idx);
+            break;
+        case UPDATE_VELOCITIES:
+            updateVelocity(idx);
+            break;
+    };
+    
+}

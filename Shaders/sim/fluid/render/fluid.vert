@@ -1,0 +1,38 @@
+#version 460 core
+
+struct Particle {
+    vec4 x;  // particle position
+    vec4 v;  // particle velocity
+    float w; // particle inverse mass
+    int t;   // particle type. one of HAIR, SOLID, or FLUID
+};
+
+layout(std430, binding = 0) buffer Particles {
+    Particle particles[];
+};
+
+struct BucketData {
+    int startIndex;
+    int particlesInBucket;
+    int nextParticleSlot;
+    int pd;
+};
+
+layout(location = 0) out vec3 eyeSpacePos;
+layout(location = 1) flat out int instanceID;
+
+layout(location = 0) uniform mat4 proj;
+layout(location = 1) uniform mat4 view;
+layout(location = 2) uniform vec3 viewPos;
+layout(location = 3) uniform float nearPlaneHeight;
+
+void main() {
+    vec3 pos = particles[gl_InstanceID].x.xyz;
+    instanceID = gl_InstanceID;
+    float distToCam = distance(pos, viewPos);
+    float pointScale = 1 - (distToCam / 1000);
+    pointScale = clamp(pointScale, 0.1, 0.7);
+	eyeSpacePos = vec3(view * vec4(pos, 1));
+	gl_Position = proj * view * vec4(pos, 1);
+	gl_PointSize = (nearPlaneHeight * pointScale) / gl_Position.w;
+}

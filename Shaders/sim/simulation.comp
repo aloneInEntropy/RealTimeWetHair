@@ -1,0 +1,13 @@
+#version 460 core
+
+#define LOCAL_SIZE 8
+
+layout (local_size_x = LOCAL_SIZE) in;
+
+
+// todo
+
+
+void main() {
+
+}
