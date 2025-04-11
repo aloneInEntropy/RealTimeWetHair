@@ -27,13 +27,15 @@ enum SimulationStage {
     COMPUTE_VISCOSITES,
     COMPUTE_FLUID_AUX,
     PREDICT,
+    PREDICT_POROUS,
     RESOLVE_COLLISIONS,
     STRETCH_SHEAR_CONSTRAINT,
     BEND_TWIST_CONSTRAINT,
     DENSITY_CONSTRAINT,
     CLUMPING,
     UPDATE_VELOCITIES,
-    N_SIM_STAGES = 13
+    UPDATE_POROUS,
+    N_SIM_STAGES = 15
 };
 
 // Particle distribution
@@ -95,13 +97,13 @@ extern int simulationTick;
 extern int nextTick;
 extern bool ticking;
 extern bool renderWhileTicking;
-extern int hairVertexStartIdx;
+extern int hairParticleStartIdx;
 extern int hairParticleCount;
-extern int fluidVertexStartIdx;
+extern int fluidParticleStartIdx;
 extern int fluidParticleCount;
-extern int porousVertexStartIdx;
+extern int porousParticleStartIdx;
 extern int porousParticleCount;
-extern int nTotalParticles;
+extern int totalParticleCount;
 extern vec3 centre;
 extern vec3 bounds;
 extern vec3 fv_gravity;

@@ -24,14 +24,14 @@ class SpatialGrid {
     ~SpatialGrid() {}
 
     void init() {
-        resetGridKernel = new Shader("grid reset", {{DIR("Shaders/grid/resetGrid.comp"), GL_COMPUTE_SHADER},
-                                                    {DIR("Shaders/grid/helper.comp"), GL_COMPUTE_SHADER}});
-        countKernel = new Shader("grid count", {{DIR("Shaders/grid/count.comp"), GL_COMPUTE_SHADER},
-                                                {DIR("Shaders/grid/helper.comp"), GL_COMPUTE_SHADER}});
-        allocateKernel = new Shader("grid allocate", {{DIR("Shaders/grid/allocate.comp"), GL_COMPUTE_SHADER},
-                                                      {DIR("Shaders/grid/helper.comp"), GL_COMPUTE_SHADER}});
-        insertKernel = new Shader("grid insert", {{DIR("Shaders/grid/insert.comp"), GL_COMPUTE_SHADER},
-                                                  {DIR("Shaders/grid/helper.comp"), GL_COMPUTE_SHADER}});
+        resetGridKernel = new Shader("grid reset", {{DIR("Shaders/sim/grid/resetGrid.comp"), GL_COMPUTE_SHADER},
+                                                    {DIR("Shaders/sim/grid/helper.comp"), GL_COMPUTE_SHADER}});
+        countKernel = new Shader("grid count", {{DIR("Shaders/sim/grid/count.comp"), GL_COMPUTE_SHADER},
+                                                {DIR("Shaders/sim/grid/helper.comp"), GL_COMPUTE_SHADER}});
+        allocateKernel = new Shader("grid allocate", {{DIR("Shaders/sim/grid/allocate.comp"), GL_COMPUTE_SHADER},
+                                                      {DIR("Shaders/sim/grid/helper.comp"), GL_COMPUTE_SHADER}});
+        insertKernel = new Shader("grid insert", {{DIR("Shaders/sim/grid/insert.comp"), GL_COMPUTE_SHADER},
+                                                  {DIR("Shaders/sim/grid/helper.comp"), GL_COMPUTE_SHADER}});
         nTotalCells = ps.size() * 3;
         particleStartIndices.resize(nTotalCells);
         cellEntries.resize(ps.size(), 0);

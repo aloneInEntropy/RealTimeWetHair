@@ -13,15 +13,15 @@ layout(std430, binding=1) buffer PredictedPositions {
     vec4 ps[];
 };
 
-layout(std430, binding=5) buffer GridStartIndices {
+layout(std430, binding=2) buffer GridStartIndices {
     BucketData startIndices[];
 };
 
-layout(std430, binding=6) buffer GridCellEntries {
+layout(std430, binding=3) buffer GridCellEntries {
     int cellEntries[];
 };
 
-layout(location = 15) uniform float gridCellSize;
+layout(location = 34) uniform float gridCellSize;
 
 ivec3 posToCell(vec4 v);
 uint flatten(ivec3 cell);

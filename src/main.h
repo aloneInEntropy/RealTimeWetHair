@@ -19,7 +19,7 @@
 #include "imgui/imgui_impl_opengl3.h"
 
 #include "camera.h"
-// #include "common_sim.h"
+#include "common_sim.h"
 #include "framebuffer.h"
 #include "input.h"
 // #include "hair.h"
@@ -48,6 +48,7 @@ Shader *startShader;
 Lighting* startLight;
 StaticMesh* renderHead, *guideHead;
 bool showHead = true;
+bool showMonkeys = false;
 vec3 lightPos = vec3(0, 3, -5);
 vec3 lightCol = vec3(0.2, 1, 1);
 

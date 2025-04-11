@@ -18,15 +18,15 @@ int simulationTick = 0;
 int nextTick = 113;
 bool ticking = false;            // is the simulation actively moving towards the next tick?
 bool renderWhileTicking = true;  // render the scene while ticking to the target tick
-int hairVertexStartIdx = 0;
+int hairParticleStartIdx = 0;
 int hairParticleCount = 0;
-int fluidVertexStartIdx = 0;
+int fluidParticleStartIdx = 0;
 int fluidParticleCount = 0;
-int porousVertexStartIdx = 0;
+int porousParticleStartIdx = 0;
 int porousParticleCount = 0;
-int nTotalParticles = 0;
-vec3 centre{50, 50, 50};
-vec3 bounds{35, 35, 35};
+int totalParticleCount = 0;
+vec3 centre{150, 50, 150};
+vec3 bounds{35, 95, 35};
 vec3 fv_gravity = vec3(0, -10, 0);
 
 bool hairLoaded = false;

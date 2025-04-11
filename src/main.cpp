@@ -21,7 +21,7 @@ void init() {
     /* Generate hairs */
     int rndCnt = 0;
     for (int i = 0; i < renderHead->vertexData.size(); ++i) {
-        if (rndCnt >= 2048) break;
+        if (rndCnt >= 512) break;
         if (renderHead->vertexData[i].pos.y >= 0) {
             // only normals facing out/up
             hs.push_back({20, vec4(renderHead->vertexData[i].pos, 1), renderHead->vertexData[i].norm});
@@ -30,7 +30,7 @@ void init() {
     }
 
     headStartPos = vec3(150, 6, 150);
-    FluidConfig fconfig = {5000, DAM_BREAK, vec3(0)};
+    FluidConfig fconfig = {343, DAM_BREAK, vec3(0)};
     sim = new Sim::Simulation(hs, fconfig);
     sim->hair->headTrans = translate(mat4(1), headStartPos);
 
@@ -54,12 +54,13 @@ void update() {
     }
     sim->hair->headTrans = translate(mat4(1), headStartPos) *
                            eulerAngleYXZ(Util::rad(headStartRot.y), Util::rad(headStartRot.x), Util::rad(headStartRot.z));
-    // sim->update();
+    sim->update();
     SM::updateTick();
 }
 
 void display() {
     sim->fluid->envFBO->bind();
+
     glClearColor(0, 0, 0, 1);
     // glClearColor(SM::cfg.bgColour.r, SM::cfg.bgColour.g, SM::cfg.bgColour.b, 1);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -125,141 +126,133 @@ void displayUI() {
             ImGui::TreePop();
         }
     }
+    // todo: organise
     if (ImGui::CollapsingHeader("Application\t\t\t", ImGuiTreeNodeFlags_DefaultOpen)) {
-        // if (ImGui::CollapsingHeader("Hair\t\t\t", ImGuiTreeNodeFlags_DefaultOpen)) {
-        //     if (ImGui::TreeNodeEx("Physics", ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth)) {
-        //         ImGui::DragFloat("Gravity", &Rods::gravity, 0.1f, -200, 200);
-        //         ImGui::DragFloat3("Torque", &Rods::torque.x, 0.1f, -100, 100);
-        //         ImGui::DragFloat("Drag", &Rods::drag, 0.001f, 0, 1);
-        //         ImGui::DragFloat("Angular Drag", &Rods::a_drag, 0.001f, 0, 1);
-        //         ImGui::NewLine();
-        //         ImGui::TreePop();
-        //     }
-        //     if (ImGui::TreeNodeEx("Hair", ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth)) {
-        //         ImGui::DragFloat3("Head Position", &headStartPos.x, .1, -100, 300);
-        //         ImGui::DragFloat3("Head Rotation", &headStartRot.x, .1, -1e9, 1e9);
-        //         headStartRot = Util::wrapV(headStartRot, vec3(0), vec3(360));
-        //         ImGui::ColorEdit4("Hair Colour", &Rods::hairColour.x);
-        //         ImGui::ColorEdit4("Guide Colour", &Rods::guideColour.x);
-        //         ImGui::Checkbox("Show Head", &showHead);
-        //         ImGui::SameLine();
-        //         ImGui::Checkbox("Show Lines", &Rods::showLines);
-        //         ImGui::SameLine();
-        //         ImGui::Checkbox("Show Points", &Rods::showPoints);
-        //         ImGui::NewLine();
-        //         ImGui::TreePop();
-        //     }
-        //     if (ImGui::TreeNodeEx("Settings", ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth)) {
-        //         if (ImGui::TreeNodeEx("Constraints", ImGuiTreeNodeFlags_SpanAvailWidth)) {
-        //             ImGui::DragFloat("SS Stiffness", &Rods::ss_k, .0001, 0.01, 1);
-        //             ImGui::DragFloat("SS SOR", &Rods::ss_SOR, .0001, 0.01, 10);
-        //             UI::Help(
-        //                 "[UPP14]\n"
-        //                 "Successive over-relaxation value for the Stretch and Shear constraint.\n");
-        //             ImGui::NewLine();
-        //             ImGui::DragFloat("BT Stiffness", &Rods::bt_k, .0001, 0.01, 1);
-        //             ImGui::DragFloat("BT SOR", &Rods::bt_SOR, .0001, 0.01, 10);
-        //             UI::Help(
-        //                 "[UPP14]\n"
-        //                 "Successive over-relaxation value for the Bend and Twist constraint.\n");
-        //             ImGui::DragInt("Substeps", &Rods::simulationSubsteps, .1, 1, 20);
-        //             ImGui::DragInt("Iterations", &Rods::ii, .1, 1, 20);
-        //             if (ImGui::Button("Print Physics Settings")) {
-        //                 sim->hair->printPhysicsSettings();
-        //             }
-        //             ImGui::SameLine();
-        //             if (ImGui::Button("Print Hair Settings")) {
-        //                 sim->hair->printHairSettings();
-        //             }
-        //             ImGui::SameLine();
-        //             if (ImGui::Button("Print Simulation Settings")) {
-        //                 sim->hair->printSimulationSettings();
-        //             }
-        //             if (ImGui::Button("Print All Settings")) {
-        //                 sim->hair->printPhysicsSettings();
-        //                 // sim->hair->printHairSettings();
-        //                 sim->hair->printSimulationSettings();
-        //             }
-        //             ImGui::TreePop();
-        //         }
-        //         ImGui::Checkbox("Play", &Rods::play);
-        //         if (ImGui::Button("Step")) {
-        //             sim->tick();
-        //         }
-        //         ImGui::SameLine();
-        //         ImGui::Text("Tick: %d", Rods::simulationTick);
+        if (ImGui::TreeNodeEx("Settings", ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth)) {
+            if (ImGui::TreeNodeEx("Constraints", ImGuiTreeNodeFlags_SpanAvailWidth)) {
+                ImGui::DragFloat("SS Stiffness", &sim->hair->ss_k, .0001, 0.01, 1);
+                ImGui::DragFloat("SS SOR", &sim->hair->ss_SOR, .0001, 0.01, 10);
+                UI::Help(
+                    "[UPP14]\n"
+                    "Successive over-relaxation value for the Stretch and Shear constraint.\n");
+                ImGui::NewLine();
+                ImGui::DragFloat("BT Stiffness", &sim->hair->bt_k, .0001, 0.01, 1);
+                ImGui::DragFloat("BT SOR", &sim->hair->bt_SOR, .0001, 0.01, 10);
+                UI::Help(
+                    "[UPP14]\n"
+                    "Successive over-relaxation value for the Bend and Twist constraint.\n");
+                ImGui::DragFloat("DN SOR", &sim->fluid->SOR, 0.01f, 0.01, 10);
+                UI::Help(
+                    "[UPP14]\n"
+                    "Successive over-relaxation value for the PBF Density constraint.\n");
+                ImGui::DragInt("Substeps", &CommonSim::simulationSubsteps, .1, 1, 20);
+                ImGui::DragInt("Iterations", &CommonSim::simulationIterations, .1, 1, 20);
+                if (ImGui::Button("Print Physics Settings")) {
+                    sim->printPhysicsSettings();
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Print Hair Settings")) {
+                    sim->printHairSettings();
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Print Simulation Settings")) {
+                    sim->printSimulationSettings();
+                }
+                if (ImGui::Button("Print All Settings")) {
+                    sim->printPhysicsSettings();
+                    // sim->hair->printHairSettings();
+                    sim->printSimulationSettings();
+                }
+                ImGui::TreePop();
+            }
 
-        //         ImGui::TreePop();
-        //     }
-        // }
-        // if (ImGui::CollapsingHeader("Fluid\t\t\t", ImGuiTreeNodeFlags_DefaultOpen)) {
-        //     if (ImGui::TreeNodeEx("Physics", ImGuiTreeNodeFlags_SpanAvailWidth)) {
-        //         ImGui::SliderFloat("Epsilon", &PBF::relaxationEpsilon, 0, 1);
-        //         ImGui::SliderFloat("Rest Density", &PBF::restDensity, 0.01, 1000);
-        //         ImGui::SliderFloat("Smoothing Radius", &PBF::smoothingRadius, 0.01, 1000);
-        //         ImGui::DragFloat3("Gravity", &PBF::gravityDir.x, 0.1f, -1000, 1000);
-        //         ImGui::DragFloat("Cohesion", &PBF::f_cohesion, 0.1f, 0, 3000);
-        //         ImGui::DragFloat("Curvature", &PBF::f_curvature, 0.0001f, 0, 1);
-        //         ImGui::SliderFloat("Adhesion", &PBF::f_adhesion, 0, 10000);
-        //         ImGui::SliderFloat("Viscosity", &PBF::f_viscosity, 0, 1);
-        //         ImGui::TreePop();
-        //     }
+            if (ImGui::TreeNodeEx("Ticking", ImGuiTreeNodeFlags_SpanAvailWidth)) {
+                ImGui::Checkbox("Ticking", &CommonSim::ticking);
+                UI::Help(
+                    "If checked, the simulation will tick forward until the value in `targetTick`. "
+                    "The target tick will only update when \"Tick Until\" is pressed. "
+                    "The simulation will not run if the target tick is less than the current simulation tick. ");
+                ImGui::Checkbox("Render While Ticking", &CommonSim::renderWhileTicking);
+                ImGui::InputInt("Target Tick", &CommonSim::nextTick);
+                if (ImGui::Button("Tick until")) {
+                    sim->tickTo(CommonSim::nextTick);
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Set to Current Tick")) {
+                    CommonSim::nextTick = CommonSim::simulationTick;
+                }
+                ImGui::TreePop();
+            }
 
-        //     if (ImGui::TreeNodeEx("Simulation", ImGuiTreeNodeFlags_SpanAvailWidth)) {
-        //         ImGui::DragFloat("SOR", &PBF::SOR, 0.01f, 0.01, 8);
-        //         ImGui::SliderInt("Substeps", &PBF::simulationSubsteps, 1, 20);
-        //         ImGui::TreePop();
-        //     }
+            ImGui::Checkbox("Play", &CommonSim::play);
+            ImGui::Text("Tick: %d%s", CommonSim::simulationTick, CommonSim::simulationTick >= CommonSim::nextTick ? " (target reached)" : "");
 
-        //     if (ImGui::TreeNodeEx("Rendering", ImGuiTreeNodeFlags_SpanAvailWidth)) {
-        //         ImGui::ColorEdit3("Fluid Colour", &PBF::waterColour.x);
-        //         ImGui::ColorEdit3("Attenuation Colour", &PBF::attenuationColour.x);
-        //         ImGui::DragFloat("Depth Strength", &PBF::depthStrength, 0.1f, 0, 1000);
-        //         ImGui::DragFloat("Thickness Strength", &PBF::thicknessStrength, 0.001, 0, 1);
-        //         ImGui::DragFloat("Threshold Ratio", &PBF::thresholdRatio, 0.001, 0.00001, 10);
-        //         ImGui::DragFloat("Clamp Ratio", &PBF::clampRatio, 0.00001, 0.000001, 1);
-        //         ImGui::SliderInt("Max Kernel Half Width", &PBF::maxKernelHalfWidth, 1, 25);
-        //         UI::Help(
-        //             "The maximum kernel size to use for the simlation. The actual kernel size is often too large, so this value limits it. "
-        //             "This will create a kernel of width 2 * n + 1.");
-        //         if (ImGui::TreeNodeEx("Rendering Stage", ImGuiTreeNodeFlags_SpanAvailWidth)) {
-        //             ImGui::RadioButton("Sprite", &PBF::renderStage, (int)PBF::FluidRenderStage::SPRITE);
-        //             ImGui::RadioButton("Velocity", &PBF::renderStage, (int)PBF::FluidRenderStage::VELOCITY);
-        //             ImGui::RadioButton("Depth", &PBF::renderStage, (int)PBF::FluidRenderStage::DEPTH);
-        //             ImGui::RadioButton("Thickness", &PBF::renderStage, (int)PBF::FluidRenderStage::THICKNESS);
-        //             ImGui::RadioButton("Smooth Depth", &PBF::renderStage, (int)PBF::FluidRenderStage::SMOOTH_DEPTH);
-        //             ImGui::RadioButton("Smooth Thickness", &PBF::renderStage, (int)PBF::FluidRenderStage::SMOOTH_THICKNESS);
-        //             ImGui::RadioButton("Normal", &PBF::renderStage, (int)PBF::FluidRenderStage::NORMAL);
-        //             ImGui::RadioButton("Composition", &PBF::renderStage, (int)PBF::FluidRenderStage::COMPOSITION);
-        //             if (PBF::renderStage == PBF::FluidRenderStage::COMPOSITION)
-        //                 ImGui::Checkbox("Show Diffuse Only", &PBF::showDiffuseOnly);
-        //             ImGui::TreePop();
-        //         }
-        //         ImGui::Checkbox("Show Depth Test", &showMonkeys);
-        //         ImGui::TreePop();
-        //     }
+            ImGui::TreePop();
+        }
+        ImGui::DragFloat3("Gravity", &CommonSim::fv_gravity.x, 0.1f, -200, 200);
+        if (ImGui::CollapsingHeader("Hair\t\t\t", ImGuiTreeNodeFlags_DefaultOpen)) {
+            if (ImGui::TreeNodeEx("Physics##Hair", ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth)) {
+                ImGui::DragFloat3("Torque", &sim->hair->torque.x, 0.1f, -100, 100);
+                ImGui::DragFloat("Drag", &sim->hair->f_l_drag, 0.001f, 0, 1);
+                ImGui::DragFloat("Angular Drag", &sim->hair->f_a_drag, 0.001f, 0, 1);
+                ImGui::NewLine();
+                ImGui::TreePop();
+            }
+            if (ImGui::TreeNodeEx("Hair", ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth)) {
+                ImGui::DragFloat3("Head Position", &headStartPos.x, .1, -100, 300);
+                ImGui::DragFloat3("Head Rotation", &headStartRot.x, .1, -1e9, 1e9);
+                headStartRot = Util::wrapV(headStartRot, vec3(0), vec3(360));
+                ImGui::ColorEdit4("Hair Colour", &sim->hair->hairColour.x);
+                ImGui::ColorEdit4("Guide Colour", &sim->hair->guideColour.x);
+                ImGui::Checkbox("Show Head", &showHead);
+                ImGui::SameLine();
+                ImGui::Checkbox("Show Lines", &sim->hair->showLines);
+                ImGui::SameLine();
+                ImGui::Checkbox("Show Points", &sim->hair->showPoints);
+                ImGui::NewLine();
+                ImGui::TreePop();
+            }
+        }
+        if (ImGui::CollapsingHeader("Fluid\t\t\t", ImGuiTreeNodeFlags_DefaultOpen)) {
+            if (ImGui::TreeNodeEx("Physics##Fluid", ImGuiTreeNodeFlags_SpanAvailWidth)) {
+                ImGui::SliderFloat("Epsilon", &sim->fluid->relaxationEpsilon, 0, 1);
+                ImGui::SliderFloat("Rest Density", &sim->fluid->restDensity, 0.01, 1000);
+                ImGui::SliderFloat("Smoothing Radius", &sim->fluid->smoothingRadius, 0.01, 1000);
+                ImGui::DragFloat("Cohesion", &sim->fluid->f_cohesion, 0.1f, 0, 3000);
+                ImGui::DragFloat("Curvature", &sim->fluid->f_curvature, 0.0001f, 0, 1);
+                ImGui::SliderFloat("Adhesion", &sim->fluid->f_adhesion, 0, 10000);
+                ImGui::SliderFloat("Viscosity", &sim->fluid->f_viscosity, 0, 1);
+                ImGui::TreePop();
+            }
 
-        //     if (ImGui::TreeNodeEx("Ticking", ImGuiTreeNodeFlags_SpanAvailWidth)) {
-        //         ImGui::Checkbox("Ticking", &PBF::ticking);
-        //         UI::Help(
-        //             "If checked, the simulation will tick forward until the value in `targetTick`. "
-        //             "The target tick will only update when \"Tick Until\" is pressed. "
-        //             "The simulation will not run if the target tick is less than the current simulation tick. ");
-        //         ImGui::Checkbox("Render While Ticking", &PBF::renderWhileTicking);
-        //         ImGui::InputInt("Target Tick", &PBF::nextTick);
-        //         if (ImGui::Button("Tick until")) {
-        //             sim->tickTo(PBF::nextTick);
-        //         }
-        //         ImGui::SameLine();
-        //         if (ImGui::Button("Set to Current Tick")) {
-        //             PBF::nextTick = PBF::simulationTick;
-        //         }
-        //         ImGui::TreePop();
-        //     }
-
-        //     ImGui::Checkbox("Play", &PBF::play);
-        //     ImGui::Text("Tick: %d%s", PBF::simulationTick, PBF::simulationTick >= PBF::nextTick ? " (target reached)" : "");
-        // }
+            if (ImGui::TreeNodeEx("Rendering", ImGuiTreeNodeFlags_SpanAvailWidth)) {
+                ImGui::ColorEdit3("Fluid Colour", &sim->fluid->waterColour.x);
+                ImGui::ColorEdit3("Attenuation Colour", &sim->fluid->attenuationColour.x);
+                ImGui::DragFloat("Depth Strength", &sim->fluid->depthStrength, 0.1f, 0, 1000);
+                ImGui::DragFloat("Thickness Strength", &sim->fluid->thicknessStrength, 0.001, 0, 1);
+                ImGui::DragFloat("Threshold Ratio", &sim->fluid->thresholdRatio, 0.001, 0.00001, 10);
+                ImGui::DragFloat("Clamp Ratio", &sim->fluid->clampRatio, 0.00001, 0.000001, 1);
+                ImGui::SliderInt("Max Kernel Half Width", &sim->fluid->maxKernelHalfWidth, 1, 25);
+                UI::Help(
+                    "The maximum kernel size to use for the simlation. The actual kernel size is often too large, so this value limits it. "
+                    "This will create a kernel of width 2 * n + 1.");
+                if (ImGui::TreeNodeEx("Rendering Stage", ImGuiTreeNodeFlags_SpanAvailWidth)) {
+                    ImGui::RadioButton("Sprite", &sim->fluid->renderStage, (int)Sim::PBF::SPRITE);
+                    ImGui::RadioButton("Velocity", &sim->fluid->renderStage, (int)Sim::PBF::VELOCITY);
+                    ImGui::RadioButton("Depth", &sim->fluid->renderStage, (int)Sim::PBF::DEPTH);
+                    ImGui::RadioButton("Thickness", &sim->fluid->renderStage, (int)Sim::PBF::THICKNESS);
+                    ImGui::RadioButton("Smooth Depth", &sim->fluid->renderStage, (int)Sim::PBF::SMOOTH_DEPTH);
+                    ImGui::RadioButton("Smooth Thickness", &sim->fluid->renderStage, (int)Sim::PBF::SMOOTH_THICKNESS);
+                    ImGui::RadioButton("Normal", &sim->fluid->renderStage, (int)Sim::PBF::NORMAL);
+                    ImGui::RadioButton("Composition", &sim->fluid->renderStage, (int)Sim::PBF::COMPOSITION);
+                    if (sim->fluid->renderStage == Sim::PBF::COMPOSITION)
+                        ImGui::Checkbox("Show Diffuse Only", &sim->fluid->showDiffuseOnly);
+                    ImGui::TreePop();
+                }
+                ImGui::Checkbox("Show Depth Test", &showMonkeys);
+                ImGui::TreePop();
+            }
+        }
     }
 
     ImGui::End();

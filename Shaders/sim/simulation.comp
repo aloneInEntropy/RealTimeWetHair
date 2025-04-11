@@ -4,6 +4,30 @@
 
 layout (local_size_x = LOCAL_SIZE) in;
 
+// todo: fix nan values (that are in hair only, for some reason)
+/* ==================================================================== Enums ==================================================================== */
+/* Simulation stages */
+#define APPLY_EXTERNAL_FORCES 0
+#define DIFFUSION 1 // todo: if implemented, this should either come after REP_VOLUME, or porous volumes need to be calculated beforehand
+#define REP_VOLUME 2
+#define COMPUTE_DENSITIES 3
+#define COMPUTE_VISCOSITES 4
+#define COMPUTE_FLUID_AUX 5
+#define PREDICT 6
+#define PREDICT_POROUS 7
+#define RESOLVE_COLLISIONS 8
+#define STRETCH_SHEAR_CONSTRAINT 9
+#define BEND_TWIST_CONSTRAINT 10
+#define DENSITY_CONSTRAINT 11
+#define CLUMPING 12
+#define UPDATE_VELOCITIES 13
+#define UPDATE_POROUS 14
+
+/* Particle types */
+#define HAIR 0
+#define PORE 1
+#define FLUID 2
+#define SOLID 3
 
 /* ==================================================================== Structs ==================================================================== */
 struct Particle {
@@ -19,6 +43,9 @@ struct PoreData {
     float startStrength;
     int endIndex;
     float endStrength;
+    float volume;
+    float density;
+    int pd1, pd2; // padding
 };
 
 struct Rod {
@@ -80,39 +107,31 @@ layout(std430, binding=7) buffer OmegasBuffer {
     vec4 omegas[];
 };
 
-layout(std430, binding=8) buffer HairDensities {
-    float porousFluidDensities[];
-};
-
-layout(std430, binding=9) buffer HairVolume {
-    float porousVolumes[];
-};
-
-layout(std430, binding=10) buffer HairData {
+layout(std430, binding=8) buffer HairData {
     PoreData poreData[];
 };
 
-layout(std430, binding=11) buffer Rods {
+layout(std430, binding=9) buffer Rods {
     Rod rods[];
 };
 
-layout(std430, binding=12) buffer PredictedOrientations {
+layout(std430, binding=10) buffer PredictedOrientations {
     vec4 us[];
 };
 
-layout(std430, binding=13) readonly buffer HairStrands {
+layout(std430, binding=11) readonly buffer HairStrands {
     HairStrand hairStrands[];
 };
 
-layout(std430, binding=14) readonly buffer RestDarbouxVectors {
+layout(std430, binding=12) readonly buffer RestDarbouxVectors {
     vec4 d0s[];
 };
 
-layout(std430, binding=15) readonly buffer VertexToStrandMap {
+layout(std430, binding=13) readonly buffer VertexToStrandMap {
     int vertexStrandMap[];
 };
 
-layout(std430, binding=16) readonly buffer RodToStrandMap {
+layout(std430, binding=14) readonly buffer RodToStrandMap {
     int rodStrandMap[];
 };
 
@@ -187,7 +206,7 @@ void computeFluidAuxillaries(int i_f);
 void computeClumpingForce(int i_p);
 
 /* Universal functions */
-void applyExternalForces(int i);
+void applyExternalForces(int i_hf);
 void computeDiffusion(int i);
 void predict(int i);
 void updateVelocities(int i);
@@ -219,29 +238,6 @@ int getRootRod(uint j) { return getRootRod(int(j)); }
 int getTailRod(int j) { return hairStrands[rodStrandMap[j]].endRodIdx; }
 int getTailRod(uint j) { return getTailRod(int(j)); }
 
-
-/* ==================================================================== Enums ==================================================================== */
-/* Simulation stages */
-#define APPLY_EXTERNAL_FORCES 0
-#define DIFFUSION 1 // todo: if implemented, this should either come after REP_VOLUME, or porous volumes need to be calculated beforehand
-#define REP_VOLUME 2
-#define COMPUTE_DENSITIES 3
-#define COMPUTE_VISCOSITES 4
-#define COMPUTE_FLUID_AUX 5
-#define PREDICT 6
-#define RESOLVE_COLLISIONS 7
-#define STRETCH_SHEAR_CONSTRAINT 8
-#define BEND_TWIST_CONSTRAINT 9
-#define DENSITY_CONSTRAINT 10
-#define CLUMPING 11
-#define UPDATE_VELOCITIES 12
-
-/* Particle types */
-#define HAIR 0
-#define PORE 1
-#define FLUID 2
-#define SOLID 3
-
 /* ==================================================================== Constants ==================================================================== */
 const float perm_K = 1e-11; // [Lin15]
 const float off_K = 0.2; // [Lin15]
@@ -268,26 +264,22 @@ float darbouxSign(int j_h) {
 
 // apply gravity, wind, and torque
 // `i_g` represents a global particle
-void applyExternalForces(int i_g) {
-    int i_h = gToH(i_g);
-    int i_f = gToF(i_g);
-    int i_p = gToP(i_g);
+void applyExternalForces(int i_hf) {
+    int i_h = gToH(i_hf);
+    int i_f = gToF(i_hf); // this works because fluids come before porous particles
 
     // hair gravity
-    if (particles[i_g].t == HAIR) {
+    if (particles[i_hf].t == HAIR) {
         if (i_h == getRootVertex(i_h)) return;
-        particles[i_g].v += vec4(fv_gravity * dt, 0);
+        particles[i_hf].v += vec4(fv_gravity * dt, 0);
         
         // hair torque
         if (i_h == getTailVertex(i_h)) return;
         int j_h = toJ(i_h);
         rods[j_h].v += vec4(inverse(inertia) * (fv_torque - cross(rods[j_h].v.xyz, inertia * rods[j_h].v.xyz)) * dt, 0);
-    } else if (particles[i_g].t == PORE) {
-        // porous particles do not experience external forces
-        return;
-    } else {
+    } else if (particles[i_hf].t == FLUID) {
         // fluid gravity
-        particles[i_g].v += vec4(fv_gravity * dt, 0);
+        particles[i_hf].v += vec4(fv_gravity * dt, 0);
     }
 }
 
@@ -326,12 +318,12 @@ void resolveCollisions(int i_g) {
 float calculateSaturation(int i_p) {
     int i_g = pToG(i_p);
     if (particles[i_g].t != PORE) return 0;
-    return restDensityInv * (1/particles[i_g].w) / (f_porosity * porousVolumes[i_p]);
+    return restDensityInv * (1/particles[i_g].w) / (f_porosity * poreData[i_p].volume);
 }
 
 // compute the change in fluid mass when near porous particles
 void computeDiffusion(int i_g) {
-    ivec3 cell = posToCell(particles[i_g].x);
+    ivec3 cell = posToCell(ps[i_g]);
     int minX = max(cell.x - 1, 0);
     int maxX = max(1, cell.x + 1);
     int minY = max(cell.y - 1, 0);
@@ -361,7 +353,7 @@ void computeDiffusion(int i_g) {
 void computePorousVolume(int i_p) {
     int i_g = pToG(i_p);
     float volume = 0;
-    ivec3 cell = posToCell(particles[i_g].x);
+    ivec3 cell = posToCell(ps[i_g]);
     int minX = max(cell.x - 1, 0);
     int maxX = max(1, cell.x + 1);
     int minY = max(cell.y - 1, 0);
@@ -376,21 +368,21 @@ void computePorousVolume(int i_p) {
                 int start = startIndices[key].startIndex;
                 int end = startIndices[key].startIndex + startIndices[key].particlesInBucket;
                 for (int s = start; s < end; ++s) {
-                    int j = cellEntries[s];
-                    if (particles[j].t != PORE) continue;
-                    volume += poly6Kernel(vec3(ps[i_g] - ps[j]), smoothingRadius);
+                    int j_g = cellEntries[s];
+                    if (particles[j_g].t != PORE) continue;
+                    volume += poly6Kernel(vec3(ps[i_g] - ps[j_g]), smoothingRadius);
                 }
             }
         }
     }
 
-    porousVolumes[i_p] = volume;
+    poreData[i_p].volume = 1 / volume;
 }
 
 // compute the porous hair or fluid density.
-// `i_pf` represents porous or fluid particles (dispatched with fluidParticleCount + porousParticleCount)
-void computeDensity(int i_pf) {
-    int i_g = i_pf + hairParticleCount; // convert to global particle index
+// `i_fp` represents fluid or porous particles (dispatched with fluidParticleCount + porousParticleCount)
+void computeDensity(int i_fp) {
+    int i_g = i_fp + hairParticleCount; // convert to global particle index
     float density = 0;
     ivec3 cell = posToCell(ps[i_g]);
     int minX = max(cell.x - 1, 0);
@@ -415,8 +407,8 @@ void computeDensity(int i_pf) {
         }
     }
 
-    if (particles[i_g].t == FLUID) fluidDensities[i_pf] = density;
-    else if (particles[i_g].t == PORE) porousFluidDensities[i_pf - fluidParticleCount] = density;
+    if (particles[i_g].t == FLUID) fluidDensities[i_fp] = density;
+    else if (particles[i_g].t == PORE) poreData[i_fp - fluidParticleCount].density = density;
 }
 
 // compute fluid viscosity
@@ -454,7 +446,7 @@ void computeViscosity(int i_f) {
                         float bigPi = -fluidRigidVisc *
                                         (min(dot(vij, xij), 0.f)) / (sqLen(xij) + smoothingRadius * smoothingRadius * 0.01);
                         nV += -(mass_i) *
-                                restDensity * porousVolumes[j_p] *
+                                restDensity * poreData[j_p].volume *
                                 bigPi *
                                 spikyKernelGrad(vec3(ps[i_g] - ps[j_g]), smoothingRadius);
                     }
@@ -553,6 +545,7 @@ void computeFluidAuxillaries(int i_f) {
 
 // [KS16], Eq. 37
 // Solve the stretch and shear constraint for vertices `i` and `i + 1` and quaternion `j`
+// `i_h` represents hair particles (dispatched with hairParticleCount)
 void stretchAndShearConstraint(int i_h) {
     int i_g = hToG(i_h);
     if (i_h == getTailVertex(i_h)) return;
@@ -581,6 +574,7 @@ void stretchAndShearConstraint(int i_h) {
 
 // [KS16], Eq. 40
 // Solve the bend and twist constraint for rods `j` and `j + 1`
+// `i_h` represents hair particles (dispatched with hairParticleCount)
 void bendAndTwistConstraint(int i_h) {
     if (i_h == getTailVertex(i_h)) return;
     if (i_h == getTailVertex(i_h) - 1) return;
@@ -663,11 +657,11 @@ void densityConstraint(int i_f) {
                             // todo
                             int j_p = j_g - hairParticleCount - fluidParticleCount;
                             /* apply hair adhesion [AAT13, Eq. 6] */
-                            deltaP += -f_adhesion * imass * (restDensity * porousVolumes[j_p]) * AI12AdhesionKernelNorm(pij, smoothingRadius);
+                            deltaP += -f_adhesion * imass * (restDensity * poreData[j_p].volume) * AI12AdhesionKernelNorm(pij, smoothingRadius);
 
                             /* apply modified artificial pressure [Lin15, Eq. 7] and [MM13, Eq. 13] */
                             deltaP += -imass * (1-calculateSaturation(j_p)) * 
-                                restDensity * (restDensity * porousVolumes[j_p]) * 
+                                restDensity * (restDensity * poreData[j_p].volume) * 
                                 (corr/(fluidDensities[i_f]*fluidDensities[i_f])) * cGrad;
                         }
                     }
@@ -703,10 +697,10 @@ void computeClumpingForce(int i_p) {
                     if (particles[j_g].t == PORE) {
                         int j_p = j_g - hairParticleCount - fluidParticleCount; // convert to local (porous) particle index
                         float avgSat = (calculateSaturation(i_p) + calculateSaturation(j_p)) / 2;
-                        float psi_i = restDensity * porousVolumes[i_p];
-                        float psi_j = restDensity * porousVolumes[j_p];
-                        float U = 1 - min(1, porousFluidDensities[i_p] * restDensityInv);
-                        vec3 dff = (particles[i_g].x - particles[j_g].x).xyz;
+                        float psi_i = restDensity * poreData[i_p].volume;
+                        float psi_j = restDensity * poreData[j_p].volume;
+                        float U = 1 - min(1, poreData[i_p].density * restDensityInv);
+                        vec3 dff = (ps[i_g] - ps[j_g]).xyz;
                         // todo: replace kernel with [Lin15, Eq.12]
                         force += -f_clumping * avgSat * U * psi_i * psi_j * poly6Kernel(dff, smoothingRadius) * normalize(dff); // [Lin15, Eq. 11]
                     }
@@ -748,11 +742,17 @@ void predict(int i_g) {
         vec3 halfBounds = (bounds - vec3(particleRadius)) / 2.f;
         ps[i_g] = vec4(clampV(vec3(ps[i_g]), centre - halfBounds, centre + halfBounds), 0); // clamp to fluid range
     } else if (particles[i_g].t == PORE) {
-        // reset porous particle positions
-        // poreData.startStrength is how much the start hair index is affected by the porous particle, which is inversely proportional to its distance
-        // i.e., the porous particle is poreData.endStrength == 1 - poreData.startStrength away from the start index
-        ps[i_g] = ps[poreData[i_p].startIndex] + (ps[poreData[i_p].endIndex] - ps[poreData[i_p].startIndex]) * poreData[i_p].endStrength;
+        
     }
+}
+
+// reset porous particle positions
+// poreData.startStrength is how much the start hair index is affected by the porous particle, which is inversely proportional to its distance
+// i.e., the porous particle is poreData.endStrength == 1 - poreData.startStrength away from the start index
+// `i_p` represents porous particles (dispatched with porousParticleCount)
+void updatePorousPositions(int i_p) {
+    int i_g = pToG(i_p);
+    ps[i_g] = ps[poreData[i_p].startIndex] + (ps[poreData[i_p].endIndex] - ps[poreData[i_p].startIndex]) * poreData[i_p].endStrength;
 }
 
 void updateVelocities(int i_g) {
@@ -774,6 +774,13 @@ void updateVelocities(int i_g) {
         ps[i_g] = particles[i_g].x;
     }
 }
+
+// update the positions of porous particles after hair particles
+// `i_p` represents porous particles (dispatched with porousParticleCount)
+// void updatePorousPositions(int i_p) {
+//     int i_g = pToG(i_p);
+//     ps[i_g] = ps[poreData[i_p].startIndex] + (ps[poreData[i_p].endIndex] - ps[poreData[i_p].startIndex]) * poreData[i_p].endStrength;
+// }
 
 void main() {
     uint gid = gl_GlobalInvocationID.x;
@@ -808,6 +815,9 @@ void main() {
         case PREDICT:
             predict(idx);
             break;
+        case PREDICT_POROUS:
+            updatePorousPositions(idx);
+            break;
         case RESOLVE_COLLISIONS:
             resolveCollisions(idx);
             break;
@@ -825,6 +835,9 @@ void main() {
             break;
         case UPDATE_VELOCITIES:
             updateVelocities(idx);
+            break;
+        case UPDATE_POROUS:
+            updatePorousPositions(idx);
             break;
     };
     

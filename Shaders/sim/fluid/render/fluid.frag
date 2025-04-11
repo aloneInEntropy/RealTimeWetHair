@@ -8,10 +8,10 @@ layout(location = 1) flat in int instanceID;
 layout(location = 0) uniform mat4 proj;
 layout(location = 1) uniform mat4 view;
 layout(location = 2) uniform vec3 viewPos;
-layout(location = 4) uniform float particleRadius;
-layout(location = 5) uniform bool showOutline;
-layout(location = 6) uniform bool showLighting;
-layout(location = 7) uniform bool showBounds;
+layout(location = 5) uniform float particleRadius;
+layout(location = 6) uniform bool showOutline;
+layout(location = 7) uniform bool showLighting;
+layout(location = 8) uniform bool showBounds;
 
 struct Particle {
     vec4 x;  // particle position
@@ -27,7 +27,7 @@ layout(std430, binding = 0) buffer Particles {
 // https://mmmovania.blogspot.com/2011/01/point-sprites-as-spheres-in-opengl33.html
 void main() {
     float op = 1;
-    if (particles[instanceID].t == 1) {
+    if (particles[instanceID].t == 3) {
         if (!showBounds) { discard; }
         else op = 0.1;
     }

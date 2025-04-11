@@ -39,6 +39,9 @@ struct PoreData {
     float startStrength;
     int endIndex;
     float endStrength;
+    float volume;
+    float density;
+    int pd1, pd2;
 };
 
 struct Rod {
@@ -83,12 +86,12 @@ class Hair {
     Hair(std::vector<HairConfig> configs) {
         shader = new Shader("hair",
                             {
-                                {DIR("Shaders/hair/hair.vert"), GL_VERTEX_SHADER},
-                                {DIR("Shaders/hair/hair.frag"), GL_FRAGMENT_SHADER},
+                                {DIR("Shaders/sim/hair/render/hair.vert"), GL_VERTEX_SHADER},
+                                {DIR("Shaders/sim/hair/render/hair.frag"), GL_FRAGMENT_SHADER},
                                 // {DIR("Shaders/hair/hair.tesc"), GL_TESS_CONTROL_SHADER},
                                 // {DIR("Shaders/hair/hair.tese"), GL_TESS_EVALUATION_SHADER},
                             });
-        simulationShader = new Shader("hair compute", DIR("Shaders/hair/simulate.comp"), GL_COMPUTE_SHADER);
+        // simulationShader = new Shader("hair compute", DIR("Shaders/hair/simulate.comp"), GL_COMPUTE_SHADER);
 
         numStrands = configs.size();
         int vStart = 0;
@@ -162,12 +165,6 @@ class Hair {
         glCreateBuffers(1, &poreDataBuffer);
         glNamedBufferStorage(poreDataBuffer, sizeof(PoreData) * poreData.size(), poreData.data(), bf);
 
-        glCreateBuffers(1, &poreFluidDensitiesBuffer);
-        glNamedBufferStorage(poreFluidDensitiesBuffer, sizeof(float) * porousFluidDensities.size(), porousFluidDensities.data(), bf);
-
-        glCreateBuffers(1, &poreVolumeBuffer);
-        glNamedBufferStorage(poreVolumeBuffer, sizeof(float) * poreVolumes.size(), poreVolumes.data(), bf);
-
         // load command buffer
         IndirectArrayDrawCommand* cmds = new IndirectArrayDrawCommand[numStrands];
         unsigned int baseInstance = 0;
@@ -219,7 +216,7 @@ class Hair {
             /* Add vertex/particle to this hair strand */
             Particle part = Particle(p, vec3(0), i == 0 ? 0 : .5f, HAIR);
             particles.push_back(part);
-            ps.push_back(vec4(0));
+            ps.push_back(vec4(p, 0));
         };
 
         float l0 = distance(particles[vStart].x, particles[vStart + 1].x);
@@ -266,20 +263,20 @@ class Hair {
     void samplePorousParticles(int smpls) {
         assert(fluidLoaded && "fluid not loaded");
         poreSamples = smpls;
-        for (int i = 0; i < hairParticleCount - 1; ++i) {
-            vec3 a = vec3(particles[i].x);
-            vec3 b = vec3(particles[i + 1].x);
-            vec3 d = b - a;
-            for (int j = 0; j < poreSamples; ++j) {
-                float strength = (j + 1.f) / (poreSamples + 1.f);
-                vec3 smpl = a + d * strength;
-                Particle p = Particle(smpl, vec3(0), 1.f, PORE);
-                particles.push_back(p);
-                ps.push_back(vec4(smpl, 0));
-                porousFluidDensities.push_back(0);
-                poreVolumes.push_back(0);
-                PoreData pData = PoreData(i, 1 - strength, i + 1, strength);
-                poreData.push_back(pData);
+        for (int s = 0; s < numStrands; ++s) {
+            for (int i = 0; i < hairStrands[s].nVertices - 1; ++i) {
+                vec3 a = vec3(particles[i].x);
+                vec3 b = vec3(particles[i + 1].x);
+                vec3 d = b - a;
+                for (int j = 0; j < poreSamples; ++j) {
+                    float strength = (j + 1.f) / (poreSamples + 1.f);
+                    vec3 smpl = a + d * strength;
+                    Particle p = Particle(smpl, vec3(0), 1.f, PORE);
+                    particles.push_back(p);
+                    ps.push_back(vec4(smpl, 0));
+                    PoreData pData = PoreData(i, 1 - strength, i + 1, strength);
+                    poreData.push_back(pData);
+                }
             }
         }
     }
@@ -390,14 +387,20 @@ class Hair {
         bindKernels();
         glBindBuffer(GL_DRAW_INDIRECT_BUFFER, commandBuffer);  // rebind command buffer
 
-        // shader->setVec3("viewPos", SM::camera->pos);
+        int viewport[4];
+        glGetIntegerv(GL_VIEWPORT, viewport);
+        float heightOfNearPlane = (float)abs(viewport[3] - viewport[1]) / (2 * tan(Util::rad(0.5 * SM::camera->FOV)));
+
         shader->setMat4("view", SM::camera->getViewMatrix());
         shader->setMat4("proj", SM::camera->getPerspectiveMatrix());
+        shader->setVec3("viewPos", SM::camera->pos);
         shader->setVec4("guideColour", guideColour);
-        if (showLines) {
-            shader->setVec4("colour", hairColour);
-            glMultiDrawArraysIndirect(GL_LINE_STRIP, 0, numStrands, 0);
-        }
+        shader->setFloat("particleRadius", particleRadius);
+        shader->setFloat("nearPlaneHeight", heightOfNearPlane);
+        // if (showLines) {
+        //     shader->setVec4("colour", hairColour);
+        //     glMultiDrawArraysIndirect(GL_LINE_STRIP, 0, numStrands, 0);
+        // }
         if (showPoints) {
             shader->setVec4("colour", vec4(0.75, 0.3, 0.3, 1));
             glMultiDrawArraysIndirect(GL_POINTS, 0, numStrands, 0);
@@ -407,13 +410,13 @@ class Hair {
 
     void bindKernels() {
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, particleBuffer);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, rodBuffer);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, hairStrandBuffer);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, predictedPositionBuffer);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, predictedRotationBuffer);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, restDarbouxBuffer);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, vertexStrandMapBuffer);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, rodStrandMapBuffer);
+        // glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, rodBuffer);
+        // glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, hairStrandBuffer);
+        // glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, predictedPositionBuffer);
+        // glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, predictedRotationBuffer);
+        // glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, restDarbouxBuffer);
+        // glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, vertexStrandMapBuffer);
+        // glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, rodStrandMapBuffer);
     }
 
     /* --- Maths functions --- */
@@ -458,8 +461,6 @@ class Hair {
 
     /* Pores */
     std::vector<PoreData> poreData;
-    std::vector<float> poreVolumes;
-    std::vector<float> porousFluidDensities;
 
     /* Rods */
     std::vector<Rod> rods;
@@ -476,8 +477,6 @@ class Hair {
     unsigned rodStrandMapBuffer = 0;
     unsigned hairStrandBuffer = 0;
     unsigned poreDataBuffer = 0;
-    unsigned poreFluidDensitiesBuffer = 0;
-    unsigned poreVolumeBuffer = 0;
     unsigned commandBuffer = 0;
     bool buffersSet = false;
 
@@ -494,13 +493,13 @@ class Hair {
     float f_clumping = 0.1;
 
     /* Hair */
-    mat4 headTrans = mat4(1);
+    mat4 headTrans = translate(mat4(1), vec3(150, 6, 150));
     vec4 hairColour = vec4(42, 25, 5, 255) / 255.f;
     vec4 guideColour = vec4(105, 175, 55, 255) / 255.f;
     float sRad = 0.05;        // rod thickness
-    float rad = 1.5f;         // strand coil radius
-    float strandLength = 20;  // length of a strand
-    int nCurls = 8;           // number of curls in a strand
+    float rad = .5f;         // strand coil radius
+    float strandLength = 5;  // length of a strand
+    int nCurls = 2;           // number of curls in a strand
     int poreSamples = 1;
 
     /* ----- Settings ----- */

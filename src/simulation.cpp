@@ -3,18 +3,19 @@
 namespace Sim {
 
 Simulation::Simulation(HairConfigs hairConfigs, FluidConfig fluidConfig) {
-    hairVertexStartIdx = 0;
+    hairParticleStartIdx = 0;
     hair = new Rods::Hair(hairConfigs);
     hairParticleCount = particles.size();
     hairLoaded = true;
-    fluidVertexStartIdx = hairParticleCount;
+    fluidParticleStartIdx = hairParticleCount;
     fluid = new PBF::Fluid(fluidConfig);
     fluidParticleCount = particles.size() - hairParticleCount;
     fluidLoaded = true;
+    porousParticleStartIdx = fluidParticleCount;
     hair->samplePorousParticles(1);
     porousParticleCount = particles.size() - hairParticleCount - fluidParticleCount;
     poresLoaded = true;
-    nTotalParticles = hairParticleCount + fluidParticleCount + porousParticleCount;
+    totalParticleCount = hairParticleCount + fluidParticleCount + porousParticleCount;
 
     preprocess();
     populateBuffers();
@@ -37,38 +38,40 @@ void Simulation::preprocess() {
 // Load all buffers, excluding Particles and predicted positions
 void Simulation::populateBuffers() {
     grid->populateBuffers();   // load particles, predicted positions, and grid data
-    hair->populateBuffers();   // load hair data (rods, darboux vectors, etc.)
+    hair->populateBuffers();   // load hair data (rods, darboux vectors, etc.) and porous particle data
     fluid->populateBuffers();  // load fluid data (densities, etc.)
 
     glCreateVertexArrays(1, &VAO);
 }
 
-void Simulation::update() {
+void Simulation::simulate() {
+    /* Dispatch grid reconstruction outside substeps */
+    grid->dispatchKernels();
+
+    glBindVertexArray(VAO);
+
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, particleBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, predictedPositionBuffer);
-    
+
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, grid->startIndicesBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, grid->cellEntriesBuffer);
-    
+
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, fluid->densitiesBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, fluid->lambdasBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, fluid->curvatureNormalsBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, fluid->omegasBuffer);
-    
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 8, hair->rodBuffer);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 9, hair->predictedRotationBuffer);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 10, hair->hairStrandBuffer);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 11, hair->poreDataBuffer);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 12, hair->poreFluidDensitiesBuffer);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 13, hair->poreVolumeBuffer);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 14, hair->restDarbouxBuffer);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 15, hair->vertexStrandMapBuffer);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 16, hair->rodStrandMapBuffer);
 
-    glBindVertexArray(VAO);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 8, hair->poreDataBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 9, hair->rodBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 10, hair->predictedRotationBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 12, hair->hairStrandBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 13, hair->restDarbouxBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 11, hair->vertexStrandMapBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 14, hair->rodStrandMapBuffer);
+
     simulationShader->use();
 
-    // todo: uniform buffer objects 
+    // todo: uniform buffer objects
     float sdt = dt / simulationSubsteps;
     simulationShader->setFloat("dt", sdt);
     simulationShader->setInt("hairParticleCount", hairParticleCount);
@@ -102,25 +105,102 @@ void Simulation::update() {
     simulationShader->setMat4("headTrans", hair->headTrans);
     simulationShader->setFloat("headRad", hair->renderHeadRadius);
     simulationShader->setInt("poreSamples", hair->poreSamples);
-    
+    simulationShader->setFloat("gridCellSize", grid->cellSize);
+
     // todo: check over this several times
-    
+
     for (int i = 0; i < simulationSubsteps; ++i) {
         for (int stage = 0; stage < N_SIM_STAGES; ++stage) {
             simulationShader->setInt("stage", stage);
             simulationShader->setInt("rbgs", -1);
+            switch (stage) {
+                case APPLY_EXTERNAL_FORCES:
+                    glDispatchCompute(ceil((hairParticleCount + fluidParticleCount) / DISPATCH_SIZE) + 1, 1, 1);
+                    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+                    break;
+                case DIFFUSION:
+                    break;
+                case REP_VOLUME:
+                    glDispatchCompute(ceil(porousParticleCount / DISPATCH_SIZE) + 1, 1, 1);
+                    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+                    break;
+                case COMPUTE_DENSITIES:
+                    glDispatchCompute(ceil(((fluidParticleCount + porousParticleCount)) / DISPATCH_SIZE) + 1, 1, 1);
+                    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+                    break;
+                case COMPUTE_VISCOSITES:
+                    glDispatchCompute(ceil(fluidParticleCount / DISPATCH_SIZE) + 1, 1, 1);
+                    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+                    break;
+                case COMPUTE_FLUID_AUX:
+                    glDispatchCompute(ceil(fluidParticleCount / DISPATCH_SIZE) + 1, 1, 1);
+                    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+                    break;
+                case PREDICT:
+                    glDispatchCompute(ceil((fluidParticleCount + porousParticleCount) / DISPATCH_SIZE) + 1, 1, 1);
+                    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+                    break;
+                case PREDICT_POROUS:
+                    glDispatchCompute(ceil(porousParticleCount / DISPATCH_SIZE) + 1, 1, 1);
+                    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+                    break;
+                case RESOLVE_COLLISIONS:
+                    glDispatchCompute(ceil(totalParticleCount / DISPATCH_SIZE) + 1, 1, 1);
+                    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+                    break;
+                case STRETCH_SHEAR_CONSTRAINT:
+                case BEND_TWIST_CONSTRAINT:
+                    for (int iter = 0; iter < simulationIterations; ++iter) {
+                        simulationShader->setInt("rbgs", 0);
+                        glDispatchCompute(ceil((hairParticleCount / 2) / DISPATCH_SIZE) + 1, 1, 1);
+                        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+                        simulationShader->setInt("rbgs", 1);
+                        glDispatchCompute(ceil((hairParticleCount / 2) / DISPATCH_SIZE) + 1, 1, 1);
+                        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+                    }
+                    break;
+                case DENSITY_CONSTRAINT:
+                    glDispatchCompute(ceil(fluidParticleCount / DISPATCH_SIZE) + 1, 1, 1);
+                    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+                    break;
+                case CLUMPING:
+                    glDispatchCompute(ceil(porousParticleCount / DISPATCH_SIZE) + 1, 1, 1);
+                    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+                    break;
+                case UPDATE_VELOCITIES:
+                    glDispatchCompute(ceil((fluidParticleCount + porousParticleCount) / DISPATCH_SIZE) + 1, 1, 1);
+                    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+                    break;
+                case UPDATE_POROUS:
+                    glDispatchCompute(ceil(porousParticleCount / DISPATCH_SIZE) + 1, 1, 1);
+                    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+                    break;
+                default:
+                    break;
+            }
         }
     }
 
-
     simulationShader->rmv();
     glBindVertexArray(0);
+    simulationTick++;
 }
 
-void Simulation::tick() {
+void Simulation::update() {
+    if (Input::isKeyJustPressed(Key::SPACE) && !SM::cfg.isCamMode) play = !play;
+    if (play) {
+        if ((ticking && simulationTick < nextTick) || !ticking) {
+            simulate();
+        }
+    } else {
+        // if (Input::isKeyJustPressed('Q')) {
+        //     tick();
+        // }
+    }
 }
 
-void Simulation::render() {
-}
+// void Simulation::tick() {
+// }
 
 }  // namespace Sim

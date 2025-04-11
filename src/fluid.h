@@ -36,7 +36,7 @@ enum FluidRenderStage {
 class Fluid {
    public:
     Fluid(FluidConfig cfg) {
-        auto&[n, pd, offs] = cfg;
+        auto& [n, pd, offs] = cfg;
         // smoothingRadius = grid->cellSize;
         createParticles(n, pd, offs);
         densities.resize(nTotalParticles);
@@ -45,16 +45,16 @@ class Fluid {
         omegas.resize(nTotalParticles);
         curvatureNormals.resize(nTotalParticles);
         transforms.resize(nTotalParticles);
-        
-        spriteShader = new Shader("fluid", DIR("Shaders/fluid/render/fluid.vert"), DIR("Shaders/fluid/render/fluid.frag"));
-        simulationShader = new Shader("fluid compute",
-                                      {
-                                          {DIR("Shaders/fluid/compute/kernels.comp"), GL_COMPUTE_SHADER},
-                                          {DIR("Shaders/fluid/compute/fluid.comp"), GL_COMPUTE_SHADER},
-                                          {DIR("Shaders/fluid/compute/grid.comp"), GL_COMPUTE_SHADER},
-                                      });
-        depthPassShader = new Shader("depth pass", DIR("Shaders/fluid/render/fluid.vert"), DIR("Shaders/fluid/render/depth_pass.frag"));
-        thicknessPassShader = new Shader("depth pass", DIR("Shaders/fluid/render/fluid.vert"), DIR("Shaders/fluid/render/thickness_pass.frag"));
+
+        spriteShader = new Shader("fluid", DIR("Shaders/sim/fluid/render/fluid.vert"), DIR("Shaders/sim/fluid/render/fluid.frag"));
+        // simulationShader = new Shader("fluid compute",
+        //                               {
+        //                                   {DIR("Shaders/fluid/compute/kernels.comp"), GL_COMPUTE_SHADER},
+        //                                   {DIR("Shaders/fluid/compute/fluid.comp"), GL_COMPUTE_SHADER},
+        //                                   {DIR("Shaders/fluid/compute/grid.comp"), GL_COMPUTE_SHADER},
+        //                               });
+        depthPassShader = new Shader("depth pass", DIR("Shaders/sim/fluid/render/fluid.vert"), DIR("Shaders/sim/fluid/render/depth_pass.frag"));
+        thicknessPassShader = new Shader("depth pass", DIR("Shaders/sim/fluid/render/fluid.vert"), DIR("Shaders/sim/fluid/render/thickness_pass.frag"));
 
         // grid->init();
         // populateBuffers();
@@ -75,7 +75,7 @@ class Fluid {
                 gridPos += centre + offset;
                 Particle part = Particle(gridPos, vec3(0), i == 0 ? 0 : .5f, FLUID);
                 particles.push_back(part);
-                ps.push_back(vec4(0));
+                ps.push_back(vec4(gridPos, 0));
             }
         } else if (pd == PD::DOUBLE_DAM_BREAK) {
             // todo
@@ -147,19 +147,15 @@ class Fluid {
 
         glCreateBuffers(1, &densitiesBuffer);
         glNamedBufferStorage(densitiesBuffer, sizeof(float) * densities.size(), densities.data(), bf);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, densitiesBuffer);
 
         glCreateBuffers(1, &lambdasBuffer);
         glNamedBufferStorage(lambdasBuffer, sizeof(float) * lambdas.size(), lambdas.data(), bf);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, lambdasBuffer);
 
         glCreateBuffers(1, &curvatureNormalsBuffer);
         glNamedBufferStorage(curvatureNormalsBuffer, sizeof(vec4) * curvatureNormals.size(), curvatureNormals.data(), bf);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, curvatureNormalsBuffer);
 
         glCreateBuffers(1, &omegasBuffer);
         glNamedBufferStorage(omegasBuffer, sizeof(vec4) * omegas.size(), omegas.data(), bf);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, omegasBuffer);
 
         // load command buffer
         IndirectArrayDrawCommand* cmds = new IndirectArrayDrawCommand[1];
@@ -180,11 +176,20 @@ class Fluid {
         glCreateBuffers(1, &commandBuffer);
         glNamedBufferStorage(commandBuffer, sizeof(IndirectArrayDrawCommand) * 1, &cmds[0], bf);
     }
-    
+
+    // todo: either add fbo to all render stages, or create new stage with depth + env
     void createFramebuffers() {
         // create framebuffers
+        envFBO = new Framebuffer("environment", DIR("Shaders/quad.vert"), DIR("Shaders/quad.frag"), SM::width, SM::height);
+        envFBO->addTexture("env colour texture", GL_TEXTURE_2D, GL_RGBA32F, GL_COLOR_ATTACHMENT0);
+        envFBO->addTexture("env depth texture", GL_TEXTURE_2D, GL_RGBA32F, GL_COLOR_ATTACHMENT1);
+        envFBO->addRenderbuffer("env render buffer", GL_DEPTH_COMPONENT32, GL_DEPTH_ATTACHMENT);
+        envFBO->addDrawBuffers({GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1});
+
         depthFBO = new Framebuffer("fluid depth", DIR("Shaders/quad.vert"), DIR("Shaders/quad.frag"), SM::width, SM::height);
         depthFBO->addTexture("depth colour texture", GL_TEXTURE_2D, GL_RGBA32F, GL_COLOR_ATTACHMENT0);
+        // depthFBO->addTexture("environment", envFBO->textures[0]->tex, GL_TEXTURE_2D);
+        // depthFBO->addTexture("environment dpth", envFBO->textures[1]->tex, GL_TEXTURE_2D);
         depthFBO->addRenderbuffer("depth render buffer", GL_DEPTH_COMPONENT32, GL_DEPTH_ATTACHMENT);
 
         thicknessFBO1 = new Framebuffer("fluid thickness", DIR("Shaders/quad.vert"), DIR("Shaders/quad.frag"),
@@ -193,30 +198,30 @@ class Fluid {
         thicknessFBO1->addRenderbuffer("depth render buffer", GL_DEPTH_COMPONENT32, GL_DEPTH_ATTACHMENT);
         thicknessFBO2 = new Framebuffer("fluid thickness", DIR("Shaders/quad.vert"), DIR("Shaders/quad.frag"), SM::width, SM::height);
         thicknessFBO2->addTexture("depth colour texture", GL_TEXTURE_2D, GL_RGBA32F, GL_COLOR_ATTACHMENT0);
+        // thicknessFBO2->addTexture("environment", envFBO->textures[0]->tex, GL_TEXTURE_2D);
+        // thicknessFBO2->addTexture("environment dpth", envFBO->textures[1]->tex, GL_TEXTURE_2D);
         thicknessFBO2->addRenderbuffer("depth render buffer", GL_DEPTH_COMPONENT32, GL_DEPTH_ATTACHMENT);
 
-        blurFBO = new Framebuffer("narrow-range", DIR("Shaders/quad.vert"), DIR("Shaders/fluid/render/narrow_range_filter.frag"), SM::width, SM::height);
+        blurFBO = new Framebuffer("narrow-range", DIR("Shaders/quad.vert"), DIR("Shaders/sim/fluid/render/narrow_range_filter.frag"), SM::width, SM::height);
         blurFBO->addTexture("blur pass texture", GL_TEXTURE_2D, GL_RGBA32F, GL_COLOR_ATTACHMENT0);
+        // blurFBO->addTexture("environment", envFBO->textures[0]->tex, GL_TEXTURE_2D);
+        // blurFBO->addTexture("environment dpth", envFBO->textures[1]->tex, GL_TEXTURE_2D);
         blurFBO->addRenderbuffer("depth render buffer", GL_DEPTH_COMPONENT32, GL_DEPTH_ATTACHMENT);
 
-        tempBlur1FBO = new Framebuffer("temp narrow-range 1", DIR("Shaders/quad.vert"), DIR("Shaders/fluid/render/narrow_range_filter.frag"), SM::width, SM::height);
+        tempBlur1FBO = new Framebuffer("temp narrow-range 1", DIR("Shaders/quad.vert"), DIR("Shaders/sim/fluid/render/narrow_range_filter.frag"), SM::width, SM::height);
         tempBlur1FBO->addTexture("temp blur pass texture 1", GL_TEXTURE_2D, GL_RGBA32F, GL_COLOR_ATTACHMENT0);
         tempBlur1FBO->addRenderbuffer("temp blur 1 render buffer", GL_DEPTH_COMPONENT32, GL_DEPTH_ATTACHMENT);
-        tempBlur2FBO = new Framebuffer("temp narrow-range 2", DIR("Shaders/quad.vert"), DIR("Shaders/fluid/render/narrow_range_filter.frag"), SM::width, SM::height);
+        tempBlur2FBO = new Framebuffer("temp narrow-range 2", DIR("Shaders/quad.vert"), DIR("Shaders/sim/fluid/render/narrow_range_filter.frag"), SM::width, SM::height);
         tempBlur2FBO->addTexture("temp blur pass 2 texture", GL_TEXTURE_2D, GL_RGBA32F, GL_COLOR_ATTACHMENT0);
         tempBlur2FBO->addRenderbuffer("temp blur 2 render buffer", GL_DEPTH_COMPONENT32, GL_DEPTH_ATTACHMENT);
 
-        normalsFBO = new Framebuffer("smoothed normal", DIR("Shaders/quad.vert"), DIR("Shaders/fluid/render/normal_pass.frag"), SM::width, SM::height);
+        normalsFBO = new Framebuffer("smoothed normal", DIR("Shaders/quad.vert"), DIR("Shaders/sim/fluid/render/normal_pass.frag"), SM::width, SM::height);
         normalsFBO->addTexture("normal texture", GL_TEXTURE_2D, GL_RGBA32F, GL_COLOR_ATTACHMENT0);
+        // normalsFBO->addTexture("environment", envFBO->textures[0]->tex, GL_TEXTURE_2D);
+        // normalsFBO->addTexture("environment dpth", envFBO->textures[1]->tex, GL_TEXTURE_2D);
         normalsFBO->addRenderbuffer("normal render buffer", GL_DEPTH_COMPONENT32, GL_DEPTH_ATTACHMENT);
 
-        envFBO = new Framebuffer("environment", DIR("Shaders/quad.vert"), DIR("Shaders/quad.frag"), SM::width, SM::height);
-        envFBO->addTexture("env colour texture", GL_TEXTURE_2D, GL_RGBA32F, GL_COLOR_ATTACHMENT0);
-        envFBO->addTexture("env depth texture", GL_TEXTURE_2D, GL_RGBA32F, GL_COLOR_ATTACHMENT1);
-        envFBO->addRenderbuffer("env render buffer", GL_DEPTH_COMPONENT32, GL_DEPTH_ATTACHMENT);
-        envFBO->addDrawBuffers({GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1});
-
-        compositionFBO = new Framebuffer("composition texture", DIR("Shaders/quad.vert"), DIR("Shaders/fluid/render/composition_pass.frag"), SM::width, SM::height);
+        compositionFBO = new Framebuffer("composition texture", DIR("Shaders/quad.vert"), DIR("Shaders/sim/fluid/render/composition_pass.frag"), SM::width, SM::height);
         compositionFBO->addTexture("composited blurred depth texture", blurFBO->textures[0]->tex, GL_TEXTURE_2D);
         compositionFBO->addTexture("composited normal texture", normalsFBO->textures[0]->tex, GL_TEXTURE_2D);
         compositionFBO->addTexture("composited thickness texture", thicknessFBO2->textures[0]->tex, GL_TEXTURE_2D);
@@ -228,13 +233,13 @@ class Fluid {
 
     void bindKernels() {
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, particleBuffer);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, predictedPositionBuffer);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, densitiesBuffer);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, lambdasBuffer);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, curvatureNormalsBuffer);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, grid->startIndicesBuffer);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, grid->cellEntriesBuffer);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, omegasBuffer);
+        // glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, predictedPositionBuffer);
+        // glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, densitiesBuffer);
+        // glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, lambdasBuffer);
+        // glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, curvatureNormalsBuffer);
+        // glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, grid->startIndicesBuffer);
+        // glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, grid->cellEntriesBuffer);
+        // glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, omegasBuffer);
     }
 
     // dispatch compute shader kernels
@@ -316,6 +321,7 @@ class Fluid {
         spriteShader->setBool("showBounds", showBounds);
         spriteShader->setFloat("nearPlaneHeight", heightOfNearPlane);
         spriteShader->setFloat("depthStrength", depthStrength);
+        spriteShader->setInt("startIdx", fluidParticleStartIdx);
 
         glBindVertexArray(VAO);
         bindKernels();
@@ -347,6 +353,7 @@ class Fluid {
         depthPassShader->setBool("showBounds", showBounds);
         depthPassShader->setFloat("nearPlaneHeight", heightOfNearPlane);
         depthPassShader->setFloat("depthStrength", depthStrength);
+        depthPassShader->setInt("startIdx", fluidParticleStartIdx);
 
         glBindVertexArray(VAO);
         bindKernels();
@@ -387,6 +394,7 @@ class Fluid {
         thicknessPassShader->setBool("showBounds", showBounds);
         thicknessPassShader->setFloat("nearPlaneHeight", heightOfNearPlane);
         thicknessPassShader->setFloat("thicknessStrength", thicknessStrength);
+        thicknessPassShader->setInt("startIdx", fluidParticleStartIdx);
 
         glBindVertexArray(VAO);
         bindKernels();
@@ -557,11 +565,6 @@ class Fluid {
         render();
     }
 
-    void tickTo(int t) {
-        nextTick = t;
-        ticking = true;
-    }
-
     int nFluidParticles = 0;
     int nBoundaryParticles = 0;
     int nTotalParticles = 0;
@@ -593,7 +596,7 @@ class Fluid {
     float restDensityInv = 1 / restDensity;
     float relaxationEpsilon = 1e-2f;
     float SOR = 1.7;
-    float k = 1; // stiffness
+    float k = 1;  // stiffness
     float f_cohesion = 40.f;
     float f_curvature = 1e-3f;
     float f_viscosity = 0.3f;
