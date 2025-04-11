@@ -33,6 +33,14 @@ enum HairDispatchPhase {
     N_STAGES = 6
 };
 
+struct PoreData {
+    PoreData(int start, float sstrength, int end, float estrength) : startIndex(start), startStrength(sstrength), endIndex(end), endStrength(estrength) {}
+    int startIndex;
+    float startStrength;
+    int endIndex;
+    float endStrength;
+};
+
 struct Rod {
     Rod(quat ori, vec3 a_vel, float invmass) {
         q = ori;
@@ -69,7 +77,6 @@ struct HairStrand {
 };
 
 /* ----- Global variables ----- */
-
 
 class Hair {
    public:
@@ -134,38 +141,32 @@ class Hair {
         glCreateVertexArrays(1, &VAO);
         auto bf = GL_MAP_WRITE_BIT | GL_MAP_READ_BIT | GL_DYNAMIC_STORAGE_BIT;
 
-        // create ssbos
-        // glCreateBuffers(1, &particleBuffer);
-        // glNamedBufferStorage(particleBuffer, sizeof(Particle) * particles.size(), particles.data(), bf);
-        // glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, particleBuffer);
-
         glCreateBuffers(1, &rodBuffer);
         glNamedBufferStorage(rodBuffer, sizeof(Rod) * rods.size(), rods.data(), bf);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, rodBuffer);
 
         glCreateBuffers(1, &hairStrandBuffer);
         glNamedBufferStorage(hairStrandBuffer, sizeof(HairStrand) * hairStrands.size(), hairStrands.data(), bf);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, hairStrandBuffer);
-
-        // glCreateBuffers(1, &predictedPositionBuffer);
-        // glNamedBufferStorage(predictedPositionBuffer, sizeof(vec4) * ps.size(), ps.data(), bf);
-        // glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, predictedPositionBuffer);
 
         glCreateBuffers(1, &predictedRotationBuffer);
         glNamedBufferStorage(predictedRotationBuffer, sizeof(quat) * us.size(), us.data(), bf);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, predictedRotationBuffer);
 
         glCreateBuffers(1, &restDarbouxBuffer);
         glNamedBufferStorage(restDarbouxBuffer, sizeof(vec4) * d0s.size(), d0s.data(), GL_MAP_READ_BIT | GL_DYNAMIC_STORAGE_BIT);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, restDarbouxBuffer);
 
         glCreateBuffers(1, &vertexStrandMapBuffer);
         glNamedBufferStorage(vertexStrandMapBuffer, sizeof(int) * vertexStrandMap.size(), vertexStrandMap.data(), bf);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, vertexStrandMapBuffer);
 
         glCreateBuffers(1, &rodStrandMapBuffer);
         glNamedBufferStorage(rodStrandMapBuffer, sizeof(int) * rodStrandMap.size(), rodStrandMap.data(), bf);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, rodStrandMapBuffer);
+
+        glCreateBuffers(1, &poreDataBuffer);
+        glNamedBufferStorage(poreDataBuffer, sizeof(PoreData) * poreData.size(), poreData.data(), bf);
+
+        glCreateBuffers(1, &poreFluidDensitiesBuffer);
+        glNamedBufferStorage(poreFluidDensitiesBuffer, sizeof(float) * porousFluidDensities.size(), porousFluidDensities.data(), bf);
+
+        glCreateBuffers(1, &poreVolumeBuffer);
+        glNamedBufferStorage(poreVolumeBuffer, sizeof(float) * poreVolumes.size(), poreVolumes.data(), bf);
 
         // load command buffer
         IndirectArrayDrawCommand* cmds = new IndirectArrayDrawCommand[numStrands];
@@ -262,6 +263,27 @@ class Hair {
         inertia = diagonal3x3(tensor);
     }
 
+    void samplePorousParticles(int smpls) {
+        assert(fluidLoaded && "fluid not loaded");
+        poreSamples = smpls;
+        for (int i = 0; i < hairParticleCount - 1; ++i) {
+            vec3 a = vec3(particles[i].x);
+            vec3 b = vec3(particles[i + 1].x);
+            vec3 d = b - a;
+            for (int j = 0; j < poreSamples; ++j) {
+                float strength = (j + 1.f) / (poreSamples + 1.f);
+                vec3 smpl = a + d * strength;
+                Particle p = Particle(smpl, vec3(0), 1.f, PORE);
+                particles.push_back(p);
+                ps.push_back(vec4(smpl, 0));
+                porousFluidDensities.push_back(0);
+                poreVolumes.push_back(0);
+                PoreData pData = PoreData(i, 1 - strength, i + 1, strength);
+                poreData.push_back(pData);
+            }
+        }
+    }
+
     /* Get the quaternion representing a rotation from `start` to `dest`.
      * From OpenGL Tutorial
      * https://github.com/opengl-tutorials/ogl/blob/master/common/quaternion_utils.cpp#L11
@@ -294,45 +316,45 @@ class Hair {
     }
 
     void simulateGPU() {
-        // dispatch compute shader kernels
-        glBindVertexArray(VAO);
-        bindKernels();
-        sdt = dt / simulationSubsteps;
-        simulationShader->use();
-        simulationShader->setFloat("dt", sdt);
-        simulationShader->setVec4("up", vec4(0, 1, 0, 0));
-        simulationShader->setVec3("gravity", gravityDir);
-        simulationShader->setVec4("torque", vec4(torque, 0));
-        simulationShader->setMat3("inertia", inertia);
-        simulationShader->setFloat("l_drag", drag);
-        simulationShader->setFloat("a_drag", a_drag);
-        simulationShader->setFloat("ss_k", ss_k);
-        simulationShader->setFloat("bt_k", bt_k);
-        simulationShader->setFloat("ss_SOR", ss_SOR);
-        simulationShader->setFloat("bt_SOR", bt_SOR);
-        simulationShader->setFloat("headRad", renderHeadRadius);
-        mat3 htr = -mat3(headTrans);
-        mat4 d;
-        simulationShader->setMat4("headTrans", headTrans);
-        for (int s = 0; s < simulationSubsteps; ++s) {
-            for (int stage = 0; stage < N_STAGES; ++stage) {
-                simulationShader->setInt("stage", stage);
-                if (stage == STRETCH_SHEAR_CONSTRAINT || stage == BEND_TWIST_CONSTRAINT) {
-                    // use red-black gauss-seidel ordering
-                    simulationShader->setInt("rbgs", 0);
-                    glDispatchCompute(ceil((nTotalVertices / 2) / DISPATCH_SIZE) + 1, 1, 1);
-                    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+        // // dispatch compute shader kernels
+        // glBindVertexArray(VAO);
+        // bindKernels();
+        // sdt = dt / simulationSubsteps;
+        // simulationShader->use();
+        // simulationShader->setFloat("dt", sdt);
+        // simulationShader->setVec4("up", vec4(0, 1, 0, 0));
+        // simulationShader->setVec3("gravity", gravityDir);
+        // simulationShader->setVec4("torque", vec4(torque, 0));
+        // simulationShader->setMat3("inertia", inertia);
+        // simulationShader->setFloat("l_drag", drag);
+        // simulationShader->setFloat("a_drag", a_drag);
+        // simulationShader->setFloat("ss_k", ss_k);
+        // simulationShader->setFloat("bt_k", bt_k);
+        // simulationShader->setFloat("ss_SOR", ss_SOR);
+        // simulationShader->setFloat("bt_SOR", bt_SOR);
+        // simulationShader->setFloat("headRad", renderHeadRadius);
+        // mat3 htr = -mat3(headTrans);
+        // mat4 d;
+        // simulationShader->setMat4("headTrans", headTrans);
+        // for (int s = 0; s < simulationSubsteps; ++s) {
+        //     for (int stage = 0; stage < N_STAGES; ++stage) {
+        //         simulationShader->setInt("stage", stage);
+        //         if (stage == STRETCH_SHEAR_CONSTRAINT || stage == BEND_TWIST_CONSTRAINT) {
+        //             // use red-black gauss-seidel ordering
+        //             simulationShader->setInt("rbgs", 0);
+        //             glDispatchCompute(ceil((nTotalVertices / 2) / DISPATCH_SIZE) + 1, 1, 1);
+        //             glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
-                    simulationShader->setInt("rbgs", 1);
-                    glDispatchCompute(ceil((nTotalVertices / 2) / DISPATCH_SIZE) + 1, 1, 1);
-                    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-                } else {
-                    simulationShader->setInt("rbgs", -1);  // unused; kept as a guard
-                    glDispatchCompute(ceil(nTotalVertices / DISPATCH_SIZE) + 1, 1, 1);
-                    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-                }
-            }
-        }
+        //             simulationShader->setInt("rbgs", 1);
+        //             glDispatchCompute(ceil((nTotalVertices / 2) / DISPATCH_SIZE) + 1, 1, 1);
+        //             glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+        //         } else {
+        //             simulationShader->setInt("rbgs", -1);  // unused; kept as a guard
+        //             glDispatchCompute(ceil(nTotalVertices / DISPATCH_SIZE) + 1, 1, 1);
+        //             glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+        //         }
+        //     }
+        // }
     }
 
     // Simulate a single simulation step
@@ -427,27 +449,35 @@ class Hair {
     float renderHeadRadius = 25;
 
     /* --- Physics buffers --- */
-    std::vector<Rod> rods;
+    vec3 torque;         // hair torque
     mat3 inertia;        // inertia matrix
     vec3 e3 = Util::UP;  // global up (0, 1, 0)
 
     /* Vertices */
-    std::vector<vec4> ps;  // predicted vertex positions
-    int nTotalVertices;    // number of vertices
+    int nTotalVertices;  // number of vertices
+
+    /* Pores */
+    std::vector<PoreData> poreData;
+    std::vector<float> poreVolumes;
+    std::vector<float> porousFluidDensities;
 
     /* Rods */
+    std::vector<Rod> rods;
     std::vector<quat> us;   // predicted rod orientations
     std::vector<vec4> d0s;  // rest darboux vectors
     int nTotalRods;         // number of quaternions/rods
 
     /* --- Render buffers --- */
     unsigned VAO = 0;
-    unsigned rodBuffer = 0;       // holds Rod struct
+    unsigned rodBuffer = 0;  // holds Rod struct
     unsigned predictedRotationBuffer = 0;
     unsigned restDarbouxBuffer = 0;
     unsigned vertexStrandMapBuffer = 0;
     unsigned rodStrandMapBuffer = 0;
     unsigned hairStrandBuffer = 0;
+    unsigned poreDataBuffer = 0;
+    unsigned poreFluidDensitiesBuffer = 0;
+    unsigned poreVolumeBuffer = 0;
     unsigned commandBuffer = 0;
     bool buffersSet = false;
 
@@ -457,6 +487,12 @@ class Hair {
     float ss_SOR = 1.36f;  // see [UPP14]
     float bt_SOR = 3.f;    // see [UPP14]
 
+    /* Physics */
+    float f_l_drag = 0.98f;  // vertex air resistance
+    float f_a_drag = 0.6f;   // rod rotation resistance
+    float f_porosity = 0.1;
+    float f_clumping = 0.1;
+
     /* Hair */
     mat4 headTrans = mat4(1);
     vec4 hairColour = vec4(42, 25, 5, 255) / 255.f;
@@ -465,6 +501,7 @@ class Hair {
     float rad = 1.5f;         // strand coil radius
     float strandLength = 20;  // length of a strand
     int nCurls = 8;           // number of curls in a strand
+    int poreSamples = 1;
 
     /* ----- Settings ----- */
     bool ssC = true;

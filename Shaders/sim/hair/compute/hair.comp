@@ -20,7 +20,7 @@
 
 #version 460 core
 
-layout (local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+// layout (local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
 struct Particle {
     vec4 x;  // particle position
@@ -316,37 +316,37 @@ void updateVelocities(uint i) {
     // rods[j].q = qnorm(us[j] * (bt_SOR/2) + rods[j].q * (1 - (bt_SOR/2)));
 }
 
-void main() {
-    uint gid = gl_GlobalInvocationID.x;
-    if (gid >= particles.length()) return;
-    int i = int(gid);
-    if (stage == STRETCH_SHEAR_CONSTRAINT || stage == BEND_TWIST_CONSTRAINT) {
-        if (rbgs == 0) i = i * 2; // red: even
-        else if (rbgs == 1) i = i * 2 + 1; // black: odd
-    }
-    if (i >= particles.length()) return;
-    int idx = i;
+// void main() {
+//     uint gid = gl_GlobalInvocationID.x;
+//     if (gid >= particles.length()) return;
+//     int i = int(gid);
+//     if (stage == STRETCH_SHEAR_CONSTRAINT || stage == BEND_TWIST_CONSTRAINT) {
+//         if (rbgs == 0) i = i * 2; // red: even
+//         else if (rbgs == 1) i = i * 2 + 1; // black: odd
+//     }
+//     if (i >= particles.length()) return;
+//     int idx = i;
     
-    switch (stage) {
-        case APPLY_EXTERNAL_FORCES:
-            applyExternalForces(idx);
-            break;
-        case PREDICT:
-            predict(idx);
-            break;
-        case RESOLVE_COLLISIONS:
-            resolveCollisions(idx);
-            break;
-        case STRETCH_SHEAR_CONSTRAINT:
-            stretchAndShearConstraint(idx);
-            break;
-        case BEND_TWIST_CONSTRAINT:
-            bendAndTwistConstraint(idx);
-            break;
-        case UPDATE_VELOCITIES:
-            updateVelocities(idx);
-            break;
-        default:
-            return;
-    };
-}
+//     switch (stage) {
+//         case APPLY_EXTERNAL_FORCES:
+//             applyExternalForces(idx);
+//             break;
+//         case PREDICT:
+//             predict(idx);
+//             break;
+//         case RESOLVE_COLLISIONS:
+//             resolveCollisions(idx);
+//             break;
+//         case STRETCH_SHEAR_CONSTRAINT:
+//             stretchAndShearConstraint(idx);
+//             break;
+//         case BEND_TWIST_CONSTRAINT:
+//             bendAndTwistConstraint(idx);
+//             break;
+//         case UPDATE_VELOCITIES:
+//             updateVelocities(idx);
+//             break;
+//         default:
+//             return;
+//     };
+// }

@@ -33,7 +33,6 @@ enum FluidRenderStage {
     COMPOSITION
 };
 
-
 class Fluid {
    public:
     Fluid(FluidConfig cfg) {
@@ -241,51 +240,51 @@ class Fluid {
     // dispatch compute shader kernels
     // todo
     void simulateGPU() {
-        /* Dispatch grid reconstruction outside substeps */
-        grid->dispatchKernels();
+        // /* Dispatch grid reconstruction outside substeps */
+        // grid->dispatchKernels();
 
-        glBindVertexArray(VAO);
-        bindKernels();
-        // todo: uniform block objects
+        // glBindVertexArray(VAO);
+        // bindKernels();
+        // // todo: uniform block objects
 
-        sdt = dt / simulationSubsteps;
-        restDensityInv = 1.f / restDensity;
-        simulationShader->use();
-        simulationShader->setVec3("gravity", gravityDir);
-        simulationShader->setFloat("dt", sdt);
-        simulationShader->setFloat("smoothingRadius", smoothingRadius);
-        simulationShader->setFloat("collisionDamping", collisionDamping);
-        simulationShader->setFloat("restDensity", restDensity);
-        simulationShader->setFloat("restDensityInv", restDensityInv);
-        simulationShader->setFloat("relaxationEpsilon", relaxationEpsilon);
-        simulationShader->setFloat("SOR", SOR);
-        simulationShader->setFloat("f_cohesion", f_cohesion);
-        simulationShader->setFloat("f_curvature", f_curvature);
-        simulationShader->setFloat("f_viscosity", f_viscosity);
-        simulationShader->setFloat("f_adhesion", f_adhesion);
-        simulationShader->setFloat("boundaryDensityCoeff", boundaryDensityCoeff);
-        simulationShader->setFloat("gridCellSize", grid->cellSize);
-        simulationShader->setInt("nFluidParticles", nFluidParticles);
-        simulationShader->setInt("nTotalParticles", nTotalParticles);
-        simulationShader->setFloat("particleRadius", particleRadius);
-        simulationShader->setVec3("bounds", bounds);
-        simulationShader->setVec3("centre", centre);
-        simulationShader->setVec3("gravityDir", gravityDir);
-        simulationShader->setInt("substepCount", simulationSubsteps);
+        // sdt = dt / simulationSubsteps;
+        // restDensityInv = 1.f / restDensity;
+        // simulationShader->use();
+        // simulationShader->setVec3("gravity", gravityDir);
+        // simulationShader->setFloat("dt", sdt);
+        // simulationShader->setFloat("smoothingRadius", smoothingRadius);
+        // simulationShader->setFloat("collisionDamping", collisionDamping);
+        // simulationShader->setFloat("restDensity", restDensity);
+        // simulationShader->setFloat("restDensityInv", restDensityInv);
+        // simulationShader->setFloat("relaxationEpsilon", relaxationEpsilon);
+        // simulationShader->setFloat("SOR", SOR);
+        // simulationShader->setFloat("f_cohesion", f_cohesion);
+        // simulationShader->setFloat("f_curvature", f_curvature);
+        // simulationShader->setFloat("f_viscosity", f_viscosity);
+        // simulationShader->setFloat("f_adhesion", f_adhesion);
+        // simulationShader->setFloat("boundaryDensityCoeff", boundaryDensityCoeff);
+        // simulationShader->setFloat("gridCellSize", grid->cellSize);
+        // simulationShader->setInt("nFluidParticles", nFluidParticles);
+        // simulationShader->setInt("nTotalParticles", nTotalParticles);
+        // simulationShader->setFloat("particleRadius", particleRadius);
+        // simulationShader->setVec3("bounds", bounds);
+        // simulationShader->setVec3("centre", centre);
+        // simulationShader->setVec3("gravityDir", gravityDir);
+        // simulationShader->setInt("substepCount", simulationSubsteps);
 
-        for (int s = 0; s < simulationSubsteps; ++s) {
-            for (int stage = 0; stage < FluidSimulationStep::N_STAGES; ++stage) {
-                simulationShader->setInt("stage", stage);
-                if (stage == DENSITY_CONSTRAINT) {
-                    glDispatchCompute(ceil((nFluidParticles) / DISPATCH_SIZE) + 1, 1, 1);
-                    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-                } else {
-                    glDispatchCompute(ceil(nFluidParticles / DISPATCH_SIZE) + 1, 1, 1);
-                    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-                }
-            }
-        }
-        simulationTick++;
+        // for (int s = 0; s < simulationSubsteps; ++s) {
+        //     for (int stage = 0; stage < FluidSimulationStep::N_STAGES; ++stage) {
+        //         simulationShader->setInt("stage", stage);
+        //         if (stage == DENSITY_CONSTRAINT) {
+        //             glDispatchCompute(ceil((nFluidParticles) / DISPATCH_SIZE) + 1, 1, 1);
+        //             glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+        //         } else {
+        //             glDispatchCompute(ceil(nFluidParticles / DISPATCH_SIZE) + 1, 1, 1);
+        //             glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+        //         }
+        //     }
+        // }
+        // simulationTick++;
     }
 
     void update() {
@@ -586,8 +585,19 @@ class Fluid {
     const float thicknessInvScale = 8;  // how much to scale the thickness map down by
 
     /* Settings */
-    vec3 centre{50, 50, 50};
-    vec3 bounds{35, 35, 35};
+    // vec3 centre{50, 50, 50};
+    // vec3 bounds{35, 35, 35};
+    float smoothingRadius = 1.4f;
+    float collisionDamping = 1;
+    float restDensity = -5e3f;
+    float restDensityInv = 1 / restDensity;
+    float relaxationEpsilon = 1e-2f;
+    float SOR = 1.7;
+    float k = 1; // stiffness
+    float f_cohesion = 40.f;
+    float f_curvature = 1e-3f;
+    float f_viscosity = 0.3f;
+    float f_adhesion = 0;
 
     /* Rendering */
     bool showOutline = true;

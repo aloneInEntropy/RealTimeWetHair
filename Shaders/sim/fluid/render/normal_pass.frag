@@ -34,7 +34,7 @@ void main() {
 
     float depth = texture(blurredDepthTex, vec2(x, y)).r;
 
-    if (depth <= 0) {
+    if (depth <= 0 || depth > 1000) {
         FragColour = vec4(0, 1, 0, 1);
         return;
     }

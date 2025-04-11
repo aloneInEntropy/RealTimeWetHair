@@ -30,7 +30,7 @@ void init() {
     }
 
     headStartPos = vec3(150, 6, 150);
-    FluidConfig fconfig = {1000, DAM_BREAK, vec3(0)};
+    FluidConfig fconfig = {5000, DAM_BREAK, vec3(0)};
     sim = new Sim::Simulation(hs, fconfig);
     sim->hair->headTrans = translate(mat4(1), headStartPos);
 

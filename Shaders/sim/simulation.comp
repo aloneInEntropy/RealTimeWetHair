@@ -5,9 +5,827 @@
 layout (local_size_x = LOCAL_SIZE) in;
 
 
-// todo
+/* ==================================================================== Structs ==================================================================== */
+struct Particle {
+    vec4 x;  // particle position
+    vec4 v;  // particle velocity
+    float w; // particle inverse mass
+    int t;   // particle type. one of HAIR, PORE, SOLID, or FLUID
+    int pd1, pd2; // padding
+};
 
+struct PoreData {
+    int startIndex;
+    float startStrength;
+    int endIndex;
+    float endStrength;
+};
+
+struct Rod {
+    vec4 q;  // rod orientation
+    vec4 v;  // rod angular velocity
+    float w; // rod inverse mass
+    int pd1, pd2, pd3; // padding
+};
+
+struct HairStrand {
+    vec4 root;
+    int nVertices;
+    int startVertexIdx;
+    int endVertexIdx;
+    int nRods;
+    int startRodIdx;
+    int endRodIdx;
+    float l0;
+    int pd; // padding
+};
+
+struct BucketData {
+    int startIndex;
+    int particlesInBucket;
+    int nextParticleSlot;
+    int pd; // padding
+};
+
+/* ==================================================================== Buffers ==================================================================== */
+layout(std430, binding=0) buffer Particles {
+    Particle particles[];
+};
+
+layout(std430, binding=1) buffer PredictedPositions {
+    vec4 ps[];
+};
+
+layout(std430, binding=2) buffer GridStartIndices {
+    BucketData startIndices[];
+};
+
+layout(std430, binding=3) buffer GridCellEntries {
+    int cellEntries[];
+};
+
+layout(std430, binding=4) buffer FluidDensities {
+    float fluidDensities[];
+};
+
+layout(std430, binding=5) buffer Lambdas {
+    float lambdas[];
+};
+
+layout(std430, binding=6) buffer CurvatureNormals {
+    vec4 curvatureNormals[];
+};
+
+layout(std430, binding=7) buffer OmegasBuffer {
+    vec4 omegas[];
+};
+
+layout(std430, binding=8) buffer HairDensities {
+    float porousFluidDensities[];
+};
+
+layout(std430, binding=9) buffer HairVolume {
+    float porousVolumes[];
+};
+
+layout(std430, binding=10) buffer HairData {
+    PoreData poreData[];
+};
+
+layout(std430, binding=11) buffer Rods {
+    Rod rods[];
+};
+
+layout(std430, binding=12) buffer PredictedOrientations {
+    vec4 us[];
+};
+
+layout(std430, binding=13) readonly buffer HairStrands {
+    HairStrand hairStrands[];
+};
+
+layout(std430, binding=14) readonly buffer RestDarbouxVectors {
+    vec4 d0s[];
+};
+
+layout(std430, binding=15) readonly buffer VertexToStrandMap {
+    int vertexStrandMap[];
+};
+
+layout(std430, binding=16) readonly buffer RodToStrandMap {
+    int rodStrandMap[];
+};
+
+/* ==================================================================== Uniforms ==================================================================== */
+layout(location = 0) uniform float dt;                  // delta time
+layout(location = 1) uniform int stage;                 // simulation stage
+layout(location = 2) uniform int hairParticleCount;     // hair particle count
+layout(location = 3) uniform int fluidParticleCount;    // fluid particle count
+layout(location = 4) uniform int porousParticleCount;   // porous particle particle count
+layout(location = 5) uniform int rbgs;                  // red-black gauss-seidel order (0 = even, 1 = odd, -1 = ignore)
+layout(location = 6) uniform vec3 bounds;               // simulation bounds
+layout(location = 7) uniform vec3 centre;               // simulation centre
+layout(location = 8) uniform float ss_SOR;              // stretch and shear constraint SOR value
+layout(location = 9) uniform float ss_k;                // stretch and shear constraint stiffness
+layout(location = 10) uniform float bt_SOR;             // bend and twist constraint SOR value
+layout(location = 11) uniform float bt_k;               // bend and twist constraint stiffness
+layout(location = 12) uniform float dn_SOR;             // density constraint SOR value
+layout(location = 13) uniform float dn_k;               // density constraint stiffness
+layout(location = 14) uniform float particleRadius;     // particle radius
+layout(location = 15) uniform float smoothingRadius;    // smoothing radius
+layout(location = 16) uniform float restDensity;        // rest density
+layout(location = 17) uniform float restDensityInv;     // 1 / rest density
+layout(location = 18) uniform float relaxationEpsilon;  // relaxation epsilon
+layout(location = 19) uniform float f_cohesion;         // cohesion coefficient
+layout(location = 20) uniform float f_curvature;        // curvature coefficient
+layout(location = 21) uniform float f_viscosity;        // viscosity coefficient
+layout(location = 22) uniform float f_adhesion;         // adhesion coefficient
+layout(location = 23) uniform float f_porosity;         // porosity coefficient
+layout(location = 24) uniform float f_clumping;         // clumping coefficient
+layout(location = 25) uniform float f_l_drag;           // linear drag
+layout(location = 26) uniform float f_a_drag;           // angular drag
+layout(location = 27) uniform vec3 fv_gravity;          // gravity
+layout(location = 28) uniform vec3 fv_torque;           // torque
+layout(location = 29) uniform mat3 inertia;             // inertia matrix
+layout(location = 30) uniform vec3 up;                  // global up direction
+layout(location = 31) uniform mat4 headTrans;           // head transform
+layout(location = 32) uniform float headRad;            // head radius
+layout(location = 33) uniform int poreSamples;          // pore sampling frequency
+
+/* ==================================================================== Grid ==================================================================== */
+ivec3 posToCell(vec4 v);
+uint flatten(ivec3 cell);
+
+/* ==================================================================== Kernels ==================================================================== */
+float poly6Kernel(vec3 r, float h);
+vec3 poly6KernelGrad(vec3 r, float h);
+float spikyKernel(vec3 r, float h);
+vec3 spikyKernelGrad(vec3 r, float h);
+vec3 AI12STKernelNorm(vec3 r, float h);
+vec3 AI12AdhesionKernelNorm(vec3 r, float h);
+
+/* ==================================================================== Functions ==================================================================== */
+/* Defined in helper.comp */
+float sqLen(vec3 p);
+vec3 clampV(vec3 v, vec3 lo, vec3 hi);
+vec4 qmul(vec4 p, vec4 q);
+vec4 qnorm(vec4 q);
+vec3 Im(vec4 q);
+vec4 conjugate(vec4 q);
+mat3 toMat3(vec4 q);
+
+/* Constraints */
+void stretchAndShearConstraint(int i_h);
+void bendAndTwistConstraint(int i_h);
+void densityConstraint(int i_f);
+
+/* Type-specific functions */
+void computePorousVolume(int i_p);
+void computeDensity(int i_pf);
+void computeViscosity(int i_f);
+void computeFluidAuxillaries(int i_f);
+void computeClumpingForce(int i_p);
+
+/* Universal functions */
+void applyExternalForces(int i);
+void computeDiffusion(int i);
+void predict(int i);
+void updateVelocities(int i);
+void resolveCollisions(uint i);
+
+/* Re-indexing functions */
+int gToH(int i_g) { return i_g; } // global index to hair index
+int hToG(int i_h) { return i_h; } // hair index to global index
+int gToF(int i_g) { return i_g - hairParticleCount; } // global index to fluid index
+int fToG(int i_f) { return i_f + hairParticleCount; } // fluid index to global index
+int gToP(int i_g) { return i_g - hairParticleCount - fluidParticleCount; } // global index to porous index
+int pToG(int i_p) { return i_p + hairParticleCount + fluidParticleCount; } // porous index to global index
+int toJ(int i_h) { return i_h - vertexStrandMap[i_h]; } // hair vertex to hair rod
+int toDarboux(int j_h) { return j_h - rodStrandMap[j_h]; } // hair rod to darboux vector
+
+// Get the root vertex of the strand containing vertex `i`
+int getRootVertex(int i) { return hairStrands[vertexStrandMap[i]].startVertexIdx; }
+int getRootVertex(uint i) { return getRootVertex(int(i)); }
+
+// Get the tail vertex of the strand containing vertex `i`
+int getTailVertex(int i) { return hairStrands[vertexStrandMap[i]].endVertexIdx; }
+int getTailVertex(uint i) { return getTailVertex(int(i)); }
+
+// Get the root rod of the strand containing rod `j`
+int getRootRod(int j) { return hairStrands[rodStrandMap[j]].startRodIdx; }
+int getRootRod(uint j) { return getRootRod(int(j)); }
+
+// Get the tail rod of the strand containing rod `j`
+int getTailRod(int j) { return hairStrands[rodStrandMap[j]].endRodIdx; }
+int getTailRod(uint j) { return getTailRod(int(j)); }
+
+
+/* ==================================================================== Enums ==================================================================== */
+/* Simulation stages */
+#define APPLY_EXTERNAL_FORCES 0
+#define DIFFUSION 1 // todo: if implemented, this should either come after REP_VOLUME, or porous volumes need to be calculated beforehand
+#define REP_VOLUME 2
+#define COMPUTE_DENSITIES 3
+#define COMPUTE_VISCOSITES 4
+#define COMPUTE_FLUID_AUX 5
+#define PREDICT 6
+#define RESOLVE_COLLISIONS 7
+#define STRETCH_SHEAR_CONSTRAINT 8
+#define BEND_TWIST_CONSTRAINT 9
+#define DENSITY_CONSTRAINT 10
+#define CLUMPING 11
+#define UPDATE_VELOCITIES 12
+
+/* Particle types */
+#define HAIR 0
+#define PORE 1
+#define FLUID 2
+#define SOLID 3
+
+/* ==================================================================== Constants ==================================================================== */
+const float perm_K = 1e-11; // [Lin15]
+const float off_K = 0.2; // [Lin15]
+const mat3 K = mat3(perm_K, off_K,off_K, off_K,perm_K,off_K, off_K,off_K,perm_K); // [LAD08]
+const float collisionResolutionSpeed = 10;
+
+/* ========================================================================================================================================================= */
+/* ====================================================================== Simulation ====================================================================== */
+/* ========================================================================================================================================================= */
+
+// Create the Darboux vector from two adjacent quaternions `j` and `j + 1`. Uses predicted rotations
+vec3 darboux(int j_h) {
+    return Im(qmul(conjugate(us[j_h]), us[j_h + 1]));
+}
+
+// Compute the discrete Darboux sign factor
+float darbouxSign(int j_h) {
+    int d = toDarboux(j_h);
+    float pos = sqLen(darboux(j_h) + d0s[d].xyz);
+    float neg = sqLen(darboux(j_h) - d0s[d].xyz);
+    if (neg <= pos) return 1;
+    return -1;
+}
+
+// apply gravity, wind, and torque
+// `i_g` represents a global particle
+void applyExternalForces(int i_g) {
+    int i_h = gToH(i_g);
+    int i_f = gToF(i_g);
+    int i_p = gToP(i_g);
+
+    // hair gravity
+    if (particles[i_g].t == HAIR) {
+        if (i_h == getRootVertex(i_h)) return;
+        particles[i_g].v += vec4(fv_gravity * dt, 0);
+        
+        // hair torque
+        if (i_h == getTailVertex(i_h)) return;
+        int j_h = toJ(i_h);
+        rods[j_h].v += vec4(inverse(inertia) * (fv_torque - cross(rods[j_h].v.xyz, inertia * rods[j_h].v.xyz)) * dt, 0);
+    } else if (particles[i_g].t == PORE) {
+        // porous particles do not experience external forces
+        return;
+    } else {
+        // fluid gravity
+        particles[i_g].v += vec4(fv_gravity * dt, 0);
+    }
+}
+
+// resolve simple scene collisions
+// `i_g` refers to global particles
+void resolveCollisions(int i_g) {
+    // clamp particles to the positive area of the simulation
+    if (ps[i_g].x < 0) {
+        ps[i_g] = particles[i_g].x;
+        ps[i_g].x = 0;
+    }
+    if (ps[i_g].y < 0) {
+        ps[i_g] = particles[i_g].x;
+        ps[i_g].y = 0;
+    }
+    if (ps[i_g].z < 0) {
+        ps[i_g] = particles[i_g].x;
+        ps[i_g].z = 0;
+    }
+
+    /* Project particles outside head */
+    if (particles[i_g].t == HAIR) {
+        int i_h = int(i_g);
+        if (i_h == getRootVertex(i_h)) return;
+    }
+
+    if (sqLen(vec3(ps[i_g] - headTrans[3])) < headRad * headRad) {
+        vec3 dirToSurface = normalize(vec3(ps[i_g] - headTrans[3]));
+        float distToSurface = length(ps[i_g].xyz - (headTrans[3].xyz + dirToSurface*headRad));
+        ps[i_g] += vec4(dirToSurface * distToSurface, 0) * collisionResolutionSpeed * dt;
+    }
+}
+
+// calculate the saturation for the porous particle
+// `i_p` represents porous particles (dispatched with porousParticleCount)
+float calculateSaturation(int i_p) {
+    int i_g = pToG(i_p);
+    if (particles[i_g].t != PORE) return 0;
+    return restDensityInv * (1/particles[i_g].w) / (f_porosity * porousVolumes[i_p]);
+}
+
+// compute the change in fluid mass when near porous particles
+void computeDiffusion(int i_g) {
+    ivec3 cell = posToCell(particles[i_g].x);
+    int minX = max(cell.x - 1, 0);
+    int maxX = max(1, cell.x + 1);
+    int minY = max(cell.y - 1, 0);
+    int maxY = max(1, cell.y + 1);
+    int minZ = max(cell.z - 1, 0);
+    int maxZ = max(1, cell.z + 1);
+    for (int x = minX; x <= maxX; ++x) {
+        for (int y = minY; y <= maxY; ++y) {
+            for (int z = minZ; z <= maxZ; ++z) {
+                ivec3 ncell = {x, y, z};
+                uint key = flatten(ncell);
+                int start = startIndices[key].startIndex;
+                int end = startIndices[key].startIndex + startIndices[key].particlesInBucket;
+                for (int s = start; s < end; ++s) {
+                    int j_g = cellEntries[s];
+                    if (particles[j_g].t == PORE) {
+                        // todo
+                    }
+                }
+            }
+        }
+    }
+}
+
+// compute the representative volume of porous particles
+// `i_p` represents porous particles (dispatched with porousParticleCount)
+void computePorousVolume(int i_p) {
+    int i_g = pToG(i_p);
+    float volume = 0;
+    ivec3 cell = posToCell(particles[i_g].x);
+    int minX = max(cell.x - 1, 0);
+    int maxX = max(1, cell.x + 1);
+    int minY = max(cell.y - 1, 0);
+    int maxY = max(1, cell.y + 1);
+    int minZ = max(cell.z - 1, 0);
+    int maxZ = max(1, cell.z + 1);
+    for (int x = minX; x <= maxX; ++x) {
+        for (int y = minY; y <= maxY; ++y) {
+            for (int z = minZ; z <= maxZ; ++z) {
+                ivec3 ncell = {x, y, z};
+                uint key = flatten(ncell);
+                int start = startIndices[key].startIndex;
+                int end = startIndices[key].startIndex + startIndices[key].particlesInBucket;
+                for (int s = start; s < end; ++s) {
+                    int j = cellEntries[s];
+                    if (particles[j].t != PORE) continue;
+                    volume += poly6Kernel(vec3(ps[i_g] - ps[j]), smoothingRadius);
+                }
+            }
+        }
+    }
+
+    porousVolumes[i_p] = volume;
+}
+
+// compute the porous hair or fluid density.
+// `i_pf` represents porous or fluid particles (dispatched with fluidParticleCount + porousParticleCount)
+void computeDensity(int i_pf) {
+    int i_g = i_pf + hairParticleCount; // convert to global particle index
+    float density = 0;
+    ivec3 cell = posToCell(ps[i_g]);
+    int minX = max(cell.x - 1, 0);
+    int maxX = max(1, cell.x + 1);
+    int minY = max(cell.y - 1, 0);
+    int maxY = max(1, cell.y + 1);
+    int minZ = max(cell.z - 1, 0);
+    int maxZ = max(1, cell.z + 1);
+    for (int x = minX; x <= maxX; ++x) {
+        for (int y = minY; y <= maxY; ++y) {
+            for (int z = minZ; z <= maxZ; ++z) {
+                ivec3 ncell = {x, y, z};
+                uint key = flatten(ncell);
+                int start = startIndices[key].startIndex;
+                int end = startIndices[key].startIndex + startIndices[key].particlesInBucket;
+                for (int s = start; s < end; ++s) {
+                    int j = cellEntries[s];
+                    density += (1.f / particles[j].w) *
+                                poly6Kernel(vec3(ps[i_g] - ps[j]), smoothingRadius);
+                }
+            }
+        }
+    }
+
+    if (particles[i_g].t == FLUID) fluidDensities[i_pf] = density;
+    else if (particles[i_g].t == PORE) porousFluidDensities[i_pf - fluidParticleCount] = density;
+}
+
+// compute fluid viscosity
+// `i_f` represents fluid particles (dispatched with fluidParticleCount)
+void computeViscosity(int i_f) {
+    int i_g = fToG(i_f);
+    vec3 nV = vec3(0);
+    float mass_i = 1.f / particles[i_g].w;
+    ivec3 cell = posToCell(ps[i_g]);
+    int minX = max(cell.x - 1, 0);
+    int maxX = max(1, cell.x + 1);
+    int minY = max(cell.y - 1, 0);
+    int maxY = max(1, cell.y + 1);
+    int minZ = max(cell.z - 1, 0);
+    int maxZ = max(1, cell.z + 1);
+    for (int x = minX; x <= maxX; ++x) {
+        for (int y = minY; y <= maxY; ++y) {
+            for (int z = minZ; z <= maxZ; ++z) {
+                ivec3 ncell = {x, y, z};
+                uint key = flatten(ncell);
+                int start = startIndices[key].startIndex;
+                int end = startIndices[key].startIndex + startIndices[key].particlesInBucket;
+                for (int s = start; s < end; ++s) {
+                    int j_g = cellEntries[s];
+                    vec3 vji = vec3(particles[j_g].v - particles[i_g].v);
+                    vec3 vij = vec3(particles[i_g].v - particles[j_g].v);
+                    vec3 xij = vec3(ps[i_g] - ps[j_g]);
+                    if (particles[j_g].t == FLUID) {
+                        /* [SB12], Eq. 2 */
+                        nV += vji * (1 / (particles[j_g].w * fluidDensities[j_g])) * spikyKernel(xij, smoothingRadius); // XSPH viscosity
+                    } else if (particles[j_g].t == PORE) {
+                        int j_p = gToP(j_g);
+                        /* [AI12], Eq.11, 13-14 */
+                        float fluidRigidVisc = (smoothingRadius * dt) / (2 * fluidDensities[i_f]);  // viscosity coefficient multiplied in later
+                        float bigPi = -fluidRigidVisc *
+                                        (min(dot(vij, xij), 0.f)) / (sqLen(xij) + smoothingRadius * smoothingRadius * 0.01);
+                        nV += -(mass_i) *
+                                restDensity * porousVolumes[j_p] *
+                                bigPi *
+                                spikyKernelGrad(vec3(ps[i_g] - ps[j_g]), smoothingRadius);
+                    }
+                }
+            }
+        }
+    }
+    particles[i_g].v += vec4(f_viscosity * nV, 0);
+}
+
+// calculate the fluid constraint
+// `i_f` represents fluid particles
+float calcFluidConstraint(int i_f) {
+    /* [UPP13, Eq. 26] */
+    return min((fluidDensities[i_f] * restDensityInv) - 1, 0.f);
+}
+
+// calculate the fluid constraint
+// `i_g` represents a global particle
+vec3 calcFluidConstraintGrad(int i_g, int j_g) {
+    if (i_g == j_g) {
+        vec3 cGrad = vec3(0);
+        ivec3 cell = posToCell(ps[i_g]);
+        int minX = max(cell.x - 1, 0);
+        int maxX = max(1, cell.x + 1);
+        int minY = max(cell.y - 1, 0);
+        int maxY = max(1, cell.y + 1);
+        int minZ = max(cell.z - 1, 0);
+        int maxZ = max(1, cell.z + 1);
+        for (int x = minX; x <= maxX; ++x) {
+            for (int y = minY; y <= maxY; ++y) {
+                for (int z = minZ; z <= maxZ; ++z) {
+                    ivec3 ncell = {x, y, z};
+                    uint key = flatten(ncell);
+                    int start = startIndices[key].startIndex;
+                    int end = startIndices[key].startIndex + startIndices[key].particlesInBucket;
+                    for (int s = start; s < end; ++s) {
+                        int k_g = cellEntries[s];
+                        cGrad += (1.f / particles[k_g].w) * spikyKernelGrad(vec3(ps[i_g] - ps[k_g]), smoothingRadius);
+                    }
+                }
+            }
+        }
+        return restDensityInv * cGrad;
+    } else {
+        // if (Util::sqDist(ps[i], ps[j]) <= 1e-6) continue;
+        vec3 cGrad = spikyKernelGrad(vec3(ps[i_g] - ps[j_g]), smoothingRadius);
+        return -(1.f / particles[j_g].w) * restDensityInv * cGrad;
+    }
+}
+
+// compute fluid auxillary quantities (curvature normals, lambdas, and omegas)
+// `i_f` represents fluid particles (dispatched with fluidParticleCount)
+void computeFluidAuxillaries(int i_f) {
+    int i_g = i_f + hairParticleCount;
+    float imass = 1.f / particles[i_g].w;  // inverse of an inverse
+    float numer = calcFluidConstraint(i_f);
+    float denom = 0;
+    vec3 cNorm = vec3(0);
+    vec3 omega = vec3(0);
+    ivec3 cell = posToCell(ps[i_g]);
+    int minX = max(cell.x - 1, 0);
+    int maxX = max(1, cell.x + 1);
+    int minY = max(cell.y - 1, 0);
+    int maxY = max(1, cell.y + 1);
+    int minZ = max(cell.z - 1, 0);
+    int maxZ = max(1, cell.z + 1);
+    for (int x = minX; x <= maxX; ++x) {
+        for (int y = minY; y <= maxY; ++y) {
+            for (int z = minZ; z <= maxZ; ++z) {
+                ivec3 ncell = {x, y, z};
+                uint key = flatten(ncell);
+                int start = startIndices[key].startIndex;
+                int end = startIndices[key].startIndex + startIndices[key].particlesInBucket;
+                for (int s = start; s < end; ++s) {
+                    int j_g = cellEntries[s];
+                    if (particles[j_g].t != FLUID) continue;
+
+                    int j_f = j_g - hairParticleCount;
+                    float jmass = 1.f / particles[j_g].w;
+                    denom += jmass * sqLen(calcFluidConstraintGrad(i_g, j_g));
+                    cNorm += jmass * spikyKernelGrad(vec3(ps[i_g] - ps[j_g]), smoothingRadius) / fluidDensities[j_f];
+
+                    /* vorticity confinement [MM13, Eq. 15] */
+                    vec3 offs = vec3(particles[j_g].v - particles[i_g].v);
+                    omega += cross(offs, spikyKernelGrad(vec3(ps[i_g] - ps[j_g]), smoothingRadius));
+                }
+            }
+        }
+    }
+
+    curvatureNormals[i_f] = vec4(cNorm * smoothingRadius, 0);
+    lambdas[i_f] = -numer / (denom + relaxationEpsilon + 1e-6f);
+    omegas[i_f] = vec4(omega, 0);
+}
+
+// [KS16], Eq. 37
+// Solve the stretch and shear constraint for vertices `i` and `i + 1` and quaternion `j`
+void stretchAndShearConstraint(int i_h) {
+    int i_g = hToG(i_h);
+    if (i_h == getTailVertex(i_h)) return;
+
+    int j_h = toJ(i_h);
+
+    float l = hairStrands[vertexStrandMap[i_h]].l0;
+    float w_q = rods[j_h].w;
+    float w_v1 = particles[i_g].w;
+    float w_v2 = particles[i_g + 1].w;
+
+    vec3 e3 = up.xyz;
+    vec3 d3 = toMat3(us[j_h]) * e3;
+    vec3 C = ((vec3(ps[i_g + 1]) - vec3(ps[i_g])) / l) - d3;
+    C *= l / (w_v1 + w_v2 + (w_q * 4 * l * l));
+    vec3 disp_p1 = w_v1 * C * ss_k;
+    vec3 disp_p2 = -w_v2 * C * ss_k;
+    ps[i_g] += vec4(disp_p1, 0);
+    ps[i_g + 1] += vec4(disp_p2, 0);
+
+    vec4 e3b = qmul(us[j_h], conjugate(vec4(e3, 0)));
+    vec4 disp_q = w_q * l * qmul(vec4(C * bt_k, 0), e3b);
+    us[j_h] += disp_q;
+    us[j_h] = qnorm(us[j_h]);
+}
+
+// [KS16], Eq. 40
+// Solve the bend and twist constraint for rods `j` and `j + 1`
+void bendAndTwistConstraint(int i_h) {
+    if (i_h == getTailVertex(i_h)) return;
+    if (i_h == getTailVertex(i_h) - 1) return;
+    int j_h = toJ(i_h);
+    if (j_h == getTailRod(j_h)) return; // todo: remove either this check or the above checks
+
+    int d = toDarboux(j_h);
+
+    float w_q = rods[j_h].w;
+    float w_u = rods[j_h + 1].w;
+    float denom = w_q + w_u;
+    vec3 omega = darboux(j_h);
+    vec3 omega0 = vec3(d0s[d]);
+    vec4 C = vec4(omega - darbouxSign(j_h) * omega0, 0) * bt_k;
+    vec4 dq = (w_q / denom) * qmul(us[j_h + 1], C);
+    vec4 du = -(w_u / denom) * qmul(us[j_h], C);
+    us[j_h] += dq;
+    us[j_h + 1] += du;
+    us[j_h] = qnorm(us[j_h]);
+    us[j_h + 1] = qnorm(us[j_h + 1]);
+}
+
+// compute the density constraint for the fluid, including surface tension and adhesion
+// `i_f` represents fluid particles (dispatched with fluidParticleCount)
+void densityConstraint(int i_f) {
+    int i_g = fToG(i_f);
+    float imass = 1.f / particles[i_g].w;  // inverse of an inverse
+    ivec3 cell = posToCell(ps[i_g]);
+    int minX = max(cell.x - 1, 0);
+    int maxX = max(1, cell.x + 1);
+    int minY = max(cell.y - 1, 0);
+    int maxY = max(1, cell.y + 1);
+    int minZ = max(cell.z - 1, 0);
+    int maxZ = max(1, cell.z + 1);
+    vec3 deltaP = vec3(0);
+    for (int x = minX; x <= maxX; ++x) {
+        for (int y = minY; y <= maxY; ++y) {
+            for (int z = minZ; z <= maxZ; ++z) {
+                ivec3 ncell = {x, y, z};
+                uint key = flatten(ncell);
+                int start = startIndices[key].startIndex;
+                int end = startIndices[key].startIndex + startIndices[key].particlesInBucket;
+                for (int s = start; s < end; ++s) {
+                    int j_g = cellEntries[s];
+                    if (i_g != j_g) {
+                        vec3 pij = vec3(ps[i_g] - ps[j_g]);
+                        vec3 cGrad = spikyKernelGrad(pij, smoothingRadius);
+
+                        /* tensile pressure correction [MM13, Eq. 13] */
+                        float corr_k = 0.3;
+                        float corr_q_coeff = 0.3f;
+                        vec3 corr_q = smoothingRadius * corr_q_coeff * vec3(1, 0, 0);
+                        int corr_n = 4;
+                        float p6num = poly6Kernel(pij, smoothingRadius);
+                        float p6den = poly6Kernel(corr_q, smoothingRadius);
+                        float corr = -corr_k * pow(p6num / p6den, corr_n);
+                        if (particles[j_g].t == FLUID) {
+                            float jmass = 1.f / particles[j_g].w;
+                            int j_f = j_g - hairParticleCount;
+                            
+                            /* [MM13, Eq. 13] */
+                            deltaP += cGrad * (lambdas[i_f] + lambdas[j_f] + corr);
+
+                            /* vorticity confinement [MM13, Eq.16] */
+                            vec3 pplus = (imass * vec3(ps[i_g]) + jmass * vec3(ps[j_g])) / (imass + jmass);
+                            vec3 eta = pplus - vec3(ps[i_g]);
+                            vec3 N = (sqLen(eta) > 0) ? normalize(eta) : vec3(0);  // [HLYK08, Eq. 7]
+                            vec3 vorticity = relaxationEpsilon * cross(N, omegas[i_f].xyz);
+                            deltaP += vorticity;
+
+                            /* apply surface tension [AAT13] */
+                            vec3 grad = AI12STKernelNorm(pij, smoothingRadius);                         // [AAT13, Eq. 2]
+                            vec3 cohesion = imass * jmass * grad * -f_cohesion;                         // [AAT13, Eq. 1]
+                            vec3 curveDiff = vec3(curvatureNormals[i_f] - curvatureNormals[j_f]);
+                            vec3 curvature = imass * curveDiff * -f_curvature;                          // [AAT13, Eq. 3]
+                            float K = (2 * restDensity) / (fluidDensities[i_f] + fluidDensities[j_f]);  // [AAT13, Eq. 4]
+                            vec3 surfaceTension = K * (cohesion + curvature);                           // [AAT13, Eq. 5]
+                            deltaP += surfaceTension * dt;
+                        } else if (particles[j_g].t == PORE) {
+                            // todo
+                            int j_p = j_g - hairParticleCount - fluidParticleCount;
+                            /* apply hair adhesion [AAT13, Eq. 6] */
+                            deltaP += -f_adhesion * imass * (restDensity * porousVolumes[j_p]) * AI12AdhesionKernelNorm(pij, smoothingRadius);
+
+                            /* apply modified artificial pressure [Lin15, Eq. 7] and [MM13, Eq. 13] */
+                            deltaP += -imass * (1-calculateSaturation(j_p)) * 
+                                restDensity * (restDensity * porousVolumes[j_p]) * 
+                                (corr/(fluidDensities[i_f]*fluidDensities[i_f])) * cGrad;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    ps[i_g] += imass * restDensityInv * vec4(deltaP, 0);
+}
+
+// compute the clumping force among porous hair particles and add it to the adjacent hair particles
+// `i_p` represents porous particles (dispatched with porousParticleCount)
+void computeClumpingForce(int i_p) {
+    int i_g = i_p + hairParticleCount + fluidParticleCount; // convert to global particle index
+    vec3 force = vec3(0);
+    ivec3 cell = posToCell(ps[i_g]);
+    int minX = max(cell.x - 1, 0);
+    int maxX = max(1, cell.x + 1);
+    int minY = max(cell.y - 1, 0);
+    int maxY = max(1, cell.y + 1);
+    int minZ = max(cell.z - 1, 0);
+    int maxZ = max(1, cell.z + 1);
+    for (int x = minX; x <= maxX; ++x) {
+        for (int y = minY; y <= maxY; ++y) {
+            for (int z = minZ; z <= maxZ; ++z) {
+                ivec3 ncell = {x, y, z};
+                uint key = flatten(ncell);
+                int start = startIndices[key].startIndex;
+                int end = startIndices[key].startIndex + startIndices[key].particlesInBucket;
+                for (int s = start; s < end; ++s) {
+                    int j_g = cellEntries[s];
+                    if (particles[j_g].t == PORE) {
+                        int j_p = j_g - hairParticleCount - fluidParticleCount; // convert to local (porous) particle index
+                        float avgSat = (calculateSaturation(i_p) + calculateSaturation(j_p)) / 2;
+                        float psi_i = restDensity * porousVolumes[i_p];
+                        float psi_j = restDensity * porousVolumes[j_p];
+                        float U = 1 - min(1, porousFluidDensities[i_p] * restDensityInv);
+                        vec3 dff = (particles[i_g].x - particles[j_g].x).xyz;
+                        // todo: replace kernel with [Lin15, Eq.12]
+                        force += -f_clumping * avgSat * U * psi_i * psi_j * poly6Kernel(dff, smoothingRadius) * normalize(dff); // [Lin15, Eq. 11]
+                    }
+                }
+            }
+        }
+    }
+
+    // apply clumping forces to connected hair particles
+    ps[poreData[i_p].startIndex] += vec4(force * poreData[i_p].startStrength, 0);
+    ps[poreData[i_p].endIndex] += vec4(force * poreData[i_p].endStrength, 0);
+}
+
+void predict(int i_g) {
+    int i_h = gToH(i_g);
+    int i_f = gToF(i_g);
+    int i_p = gToP(i_g);
+
+    if (particles[i_g].t == HAIR) {
+        // todo: hairs are only rotating about the head, but do not rotate to point in new direction
+        // ? rebuilding all quaternions and Darboux vectors when headTrans is updated (serial; one thead per strand)
+        if (i_h == getRootVertex(i_h)) {
+            ps[i_g] = headTrans * hairStrands[vertexStrandMap[i_h]].root;
+        } else {
+            ps[i_g] = particles[i_g].x + particles[i_g].v * dt;
+        }
+
+        if (i_h == getTailVertex(i_h)) return;
+        int j_h = toJ(i_h);
+        if (j_h == getRootRod(j_h)) {
+            us[j_h] = rods[j_h].q + 0.5f * qmul(rods[j_h].q, vec4(rods[j_h].v.xyz, 0)) * dt;
+            us[j_h] = qnorm(us[j_h]);
+        } else {
+            us[j_h] = rods[j_h].q + 0.5f * qmul(rods[j_h].q, vec4(rods[j_h].v.xyz, 0)) * dt;
+            us[j_h] = qnorm(us[j_h]);
+        }
+    } else if (particles[i_g].t == FLUID) {
+        ps[i_g] = particles[i_g].x + particles[i_g].v * dt;
+        vec3 halfBounds = (bounds - vec3(particleRadius)) / 2.f;
+        ps[i_g] = vec4(clampV(vec3(ps[i_g]), centre - halfBounds, centre + halfBounds), 0); // clamp to fluid range
+    } else if (particles[i_g].t == PORE) {
+        // reset porous particle positions
+        // poreData.startStrength is how much the start hair index is affected by the porous particle, which is inversely proportional to its distance
+        // i.e., the porous particle is poreData.endStrength == 1 - poreData.startStrength away from the start index
+        ps[i_g] = ps[poreData[i_p].startIndex] + (ps[poreData[i_p].endIndex] - ps[poreData[i_p].startIndex]) * poreData[i_p].endStrength;
+    }
+}
+
+void updateVelocities(int i_g) {
+    if (particles[i_g].t == HAIR) {
+        particles[i_g].v = f_l_drag * (ps[i_g] - particles[i_g].x) / dt;
+        particles[i_g].x = ps[i_g] * ss_SOR + particles[i_g].x * (1 - ss_SOR);
+        ps[i_g] = particles[i_g].x;
+
+        int i_h = gToH(i_g);
+        if (i_h == getTailVertex(i_h)) return;
+        int j_h = toJ(i_h);
+        us[j_h] = qnorm(us[j_h]);
+        vec3 nv = f_a_drag * Im((2.f * qmul(conjugate(rods[j_h].q), us[j_h])) / dt);
+        rods[j_h].v = vec4(nv, 0);
+        // todo: this allows for more hair styles but produces undesirable results if moving too quickly
+        // rods[j_h].q = qnorm(us[j_h] * (bt_SOR/2) + rods[j_h].q * (1 - (bt_SOR/2)));
+    } else if (particles[i_g].t == FLUID) {
+        particles[i_g].x = ps[i_g] * dn_SOR + particles[i_g].x * (1 - dn_SOR);
+        ps[i_g] = particles[i_g].x;
+    }
+}
 
 void main() {
+    uint gid = gl_GlobalInvocationID.x;
+    if (gid >= particles.length()) return;
 
+    int idx = int(gid);
+    if (stage == STRETCH_SHEAR_CONSTRAINT || stage == BEND_TWIST_CONSTRAINT) {
+        if (rbgs == 0) idx = idx * 2; // red: even
+        else if (rbgs == 1) idx = idx * 2 + 1; // black: odd
+    }
+    if (idx >= particles.length()) return;
+
+    switch(stage) {
+        case APPLY_EXTERNAL_FORCES:
+            applyExternalForces(idx);
+            break;
+        case DIFFUSION:
+            computeDiffusion(idx);
+            break;
+        case REP_VOLUME:
+            computePorousVolume(idx);
+            break;
+        case COMPUTE_DENSITIES:
+            computeDensity(idx);
+            break;
+        case COMPUTE_VISCOSITES:
+            computeViscosity(idx);
+            break;
+        case COMPUTE_FLUID_AUX:
+            computeFluidAuxillaries(idx);
+            break;
+        case PREDICT:
+            predict(idx);
+            break;
+        case RESOLVE_COLLISIONS:
+            resolveCollisions(idx);
+            break;
+        case STRETCH_SHEAR_CONSTRAINT:
+            stretchAndShearConstraint(idx);
+            break;
+        case BEND_TWIST_CONSTRAINT:
+            bendAndTwistConstraint(idx);
+            break;
+        case DENSITY_CONSTRAINT:
+            densityConstraint(idx);
+            break;
+        case CLUMPING:
+            computeClumpingForce(idx);
+            break;
+        case UPDATE_VELOCITIES:
+            updateVelocities(idx);
+            break;
+    };
+    
 }

@@ -15,8 +15,6 @@ layout (location = 5) uniform float nearPlaneHeight;
 layout (location = 6) uniform float thresholdRatio = 1;
 layout (location = 7) uniform float clampRatio = .001;
 
-// TODO: comment code with appropriate equations from paper
-
 // [TY18], Eq. 4
 // Since the 1D kernel is seperable and the 2D kernel will use magnitude of the difference (dot product), compute the dot product of the x- and y-values of the difference individually
 float Gaussian1D(float r, float sigma_i) {
@@ -40,7 +38,7 @@ void ModifiedGaussianFilter(
         weight = 0;
         weight_other = 0;
     } else {
-        if(sampleDepth < lower) {
+        if (sampleDepth < lower) {
             sampleDepth = lower_clamp;
         } else {
             upper = max(upper, sampleDepth + threshold); /* [TY18], Eq. 8 */
@@ -106,14 +104,14 @@ float filter2D(float pixelDepth) {
         return pixelDepth;
     }
 
-    float threshold  = particleRadius * thresholdRatio;
+    float threshold  = particleRadius * thresholdRatio; // sigma
     float ratio      = nearPlaneHeight;
     float K          = filterRadius * ratio * particleRadius;
-    int   filterSize = min(maxFilterSize, int(ceil(K / pixelDepth)));
+    int   filterSize = min(maxFilterSize, int(ceil(K / pixelDepth))); // delta
 
     float upper       = pixelDepth + threshold;
     float lower       = pixelDepth - threshold;
-    float lower_clamp = pixelDepth - particleRadius * clampRatio;
+    float lower_clamp = pixelDepth - particleRadius * clampRatio; // z_i - mu
 
     float sigma      = filterSize / 3.0f;
     float two_sigma2 = 2.0f * sigma * sigma;

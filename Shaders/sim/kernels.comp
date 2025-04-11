@@ -1,4 +1,7 @@
-/* Contains implementations for the kernels used in the simulation. */
+/* Contains implementations for the kernels used in the simulation. 
+https://cs418.cs.illinois.edu/website/text/sph.html 
+todo: add `_KernelV` functions to avoid normalising vectors twice
+*/
 
 #version 460 core
 
@@ -40,7 +43,7 @@ vec3 spikyKernelGrad(vec3 r, float h) {
 
     float dst = max(sqrt(sdst), 1e-9f);
     float dff = h - dst;
-    float spikyGradConst = -45.f / (PI * pow(h, 6));  // see https://cs418.cs.illinois.edu/website/text/sph.html
+    float spikyGradConst = -45.f / (PI * pow(h, 6));
     return spikyGradConst * dff * dff * (r / dst);
 }
 

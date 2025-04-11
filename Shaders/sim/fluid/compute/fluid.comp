@@ -121,17 +121,16 @@ void applyExternalForces(int i) {
     if (particles[i].t == FLUID) particles[i].v += vec4(gravityDir * dt, 0);
 }
 
-// todo: enforce consistency with using ps[i] vs particles[i].x for pre-prediction steps
 void computeViscosity(int i) {
     vec3 nV = vec3(0);
     float mass_i = 1.f / particles[i].w;
     ivec3 cell = posToCell(ps[i]);
     int minX = max(cell.x - 1, 0);
-    int maxX = minX + 2;
+    int maxX = max(1, cell.x + 1);
     int minY = max(cell.y - 1, 0);
-    int maxY = minY + 2;
+    int maxY = max(1, cell.y + 1);
     int minZ = max(cell.z - 1, 0);
-    int maxZ = minZ + 2;
+    int maxZ = max(1, cell.z + 1);
     for (int x = minX; x <= maxX; ++x) {
         for (int y = minY; y <= maxY; ++y) {
             for (int z = minZ; z <= maxZ; ++z) {
@@ -143,10 +142,10 @@ void computeViscosity(int i) {
                     int j = cellEntries[s];
                     vec3 vji = vec3(particles[j].v - particles[i].v);
                     vec3 vij = vec3(particles[i].v - particles[j].v);
-                    vec3 xij = vec3(particles[i].x - particles[j].x);
+                    vec3 xij = vec3(ps[i] - ps[j]);
                     if (particles[j].t == FLUID) {
                         /* [SB12], Eq. 2 */
-                        nV += vji * (1 / (particles[j].w * densities[i])) * spikyKernel(xij, smoothingRadius); // XSPH viscosity
+                        nV += vji * (1 / (particles[j].w * densities[j])) * spikyKernel(xij, smoothingRadius); // XSPH viscosity
                     } else {
                         /* [AI12], Eq.11, 13-14 */
                         float fluidRigidVisc = (smoothingRadius * dt) / (2 * densities[i]);  // viscosity coefficient multiplied in later
@@ -155,7 +154,7 @@ void computeViscosity(int i) {
                         nV += -(mass_i) *
                                 boundaryDensityCoeff *
                                 bigPi *
-                                spikyKernelGrad(vec3(particles[i].x - particles[j].x), smoothingRadius);
+                                spikyKernelGrad(vec3(ps[i] - ps[j]), smoothingRadius);
                     }
                 }
             }
@@ -168,11 +167,11 @@ void computeDensity(int i) {
     float density = 0;
     ivec3 cell = posToCell(ps[i]);
     int minX = max(cell.x - 1, 0);
-    int maxX = minX + 2;
+    int maxX = max(1, cell.x + 1);
     int minY = max(cell.y - 1, 0);
-    int maxY = minY + 2;
+    int maxY = max(1, cell.y + 1);
     int minZ = max(cell.z - 1, 0);
-    int maxZ = minZ + 2;
+    int maxZ = max(1, cell.z + 1);
     for (int x = minX; x <= maxX; ++x) {
         for (int y = minY; y <= maxY; ++y) {
             for (int z = minZ; z <= maxZ; ++z) {
@@ -203,11 +202,11 @@ vec3 calcConstraintGrad(int i, int j) {
         vec3 cGrad = vec3(0);
         ivec3 cell = posToCell(ps[i]);
         int minX = max(cell.x - 1, 0);
-        int maxX = minX + 2;
+        int maxX = max(1, cell.x + 1);
         int minY = max(cell.y - 1, 0);
-        int maxY = minY + 2;
+        int maxY = max(1, cell.y + 1);
         int minZ = max(cell.z - 1, 0);
-        int maxZ = minZ + 2;
+        int maxZ = max(1, cell.z + 1);
         for (int x = minX; x <= maxX; ++x) {
             for (int y = minY; y <= maxY; ++y) {
                 for (int z = minZ; z <= maxZ; ++z) {
@@ -239,11 +238,11 @@ void densityConstraint(int i) {
     vec3 omega = vec3(0);
     ivec3 cell = posToCell(ps[i]);
     int minX = max(cell.x - 1, 0);
-    int maxX = minX + 2;
+    int maxX = max(1, cell.x + 1);
     int minY = max(cell.y - 1, 0);
-    int maxY = minY + 2;
+    int maxY = max(1, cell.y + 1);
     int minZ = max(cell.z - 1, 0);
-    int maxZ = minZ + 2;
+    int maxZ = max(1, cell.z + 1);
     for (int x = minX; x <= maxX; ++x) {
         for (int y = minY; y <= maxY; ++y) {
             for (int z = minZ; z <= maxZ; ++z) {
@@ -320,22 +319,18 @@ void densityConstraint(int i) {
         }
     }
 
-    ps[i] += imass * restDensityInv * vec4(deltaP, 0)/substepCount;
+    ps[i] += imass * restDensityInv * vec4(deltaP, 0);
 }
 
 void predictPosition(int i) {
-    ps[i] = particles[i].x + particles[i].v/substepCount * dt;
+    ps[i] = particles[i].x + particles[i].v * dt;
     vec3 halfBounds = (bounds - vec3(particleRadius)) / 2.f;
     ps[i] = vec4(clampV(vec3(ps[i]), centre - halfBounds, centre + halfBounds), 0);
 }
 
 void updateVelocity(int i) {
-    // vec3 halfBounds = (bounds - vec3(particleRadius)) / 2.f;
-    // float ext = 1;
-    // ps[i] = vec4(clampV(vec3(ps[i]), centre - halfBounds*ext, centre + halfBounds*ext), 0);
-
     if (i < nFluidParticles) {
-        particles[i].v = (ps[i] - particles[i].x) / dt;
+        particles[i].v = vec4(clampV(vec3(ps[i] - particles[i].x) / dt, vec3(-9999), vec3(9999)), 0);
         particles[i].x = ps[i] * SOR + particles[i].x * (1 - SOR);
         ps[i] = particles[i].x;
     } else {
@@ -347,7 +342,6 @@ void main() {
     uint gid = gl_GlobalInvocationID.x;
     if (gid >= particles.length()) return;
     int idx = int(gid);
-    if (idx >= particles.length()) return;
 
     switch(stage) {
         case APPLY_EXTERNAL_FORCES:

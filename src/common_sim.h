@@ -13,19 +13,27 @@ namespace CommonSim {
 // The phase a particle is in during computation
 enum Phase {
     HAIR,   // The particle is treated as hair
-    SOLID,  // The particle is treated as part of a rigid body
-    FLUID   // The particle is treated as a fluid
+    PORE,   // The particle is treated as a hair boundary/porous particle
+    FLUID,  // The particle is treated as a fluid
+    SOLID   // The particle is treated as part of a rigid body
 };
 
-// The step of the fluid simulation to run
-enum FluidSimulationStep {
+// The stage to dispatch the simulation to
+enum SimulationStage {
     APPLY_EXTERNAL_FORCES,
+    DIFFUSION,
+    REP_VOLUME,
     COMPUTE_DENSITIES,
     COMPUTE_VISCOSITES,
+    COMPUTE_FLUID_AUX,
     PREDICT,
+    RESOLVE_COLLISIONS,
+    STRETCH_SHEAR_CONSTRAINT,
+    BEND_TWIST_CONSTRAINT,
     DENSITY_CONSTRAINT,
+    CLUMPING,
     UPDATE_VELOCITIES,
-    N_STAGES = 6
+    N_SIM_STAGES = 13
 };
 
 // Particle distribution
@@ -68,7 +76,7 @@ extern std::vector<Particle> particles;
 // List of `Particle` predicted positions
 extern std::vector<vec4> ps;
 
-// Radius of a single particle 
+// Radius of a single particle
 extern float particleRadius;
 
 // The 3D grid containing the simulation.
@@ -88,30 +96,19 @@ extern int nextTick;
 extern bool ticking;
 extern bool renderWhileTicking;
 extern int hairVertexStartIdx;
-extern int nHairParticles;
+extern int hairParticleCount;
 extern int fluidVertexStartIdx;
-extern int nFluidParticles;
+extern int fluidParticleCount;
+extern int porousVertexStartIdx;
+extern int porousParticleCount;
 extern int nTotalParticles;
+extern vec3 centre;
+extern vec3 bounds;
+extern vec3 fv_gravity;
 
-/* Fluid Physics */;
-extern float smoothingRadius;
-extern float collisionDamping;
-extern float restDensity;
-extern float restDensityInv;
-extern float relaxationEpsilon;
-extern float SOR;
-extern float f_cohesion;
-extern float f_curvature;
-extern float f_viscosity;
-extern float f_adhesion;
-extern float boundaryDensityCoeff;
-extern vec3 gravityDir;
-
-/* Hair Physics */;
-extern vec3 torque;
-extern float drag;
-extern float a_drag;
-
+extern bool hairLoaded;
+extern bool poresLoaded;
+extern bool fluidLoaded;
 }  // namespace CommonSim
 
 #endif /* COMMON_SIM_H */

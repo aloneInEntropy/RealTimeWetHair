@@ -46,7 +46,7 @@ void main() {
     float bgDepth = texture(environmentDepthTex, uv).r;
     vec3 background = texture(environmentColourTex, uv).xyz;
 
-    if (pixelDepth <= 0) {
+    if (pixelDepth <= 0 || pixelDepth > 1000) {
         FragColour = vec4(background, 1);
         return;
     }
@@ -81,10 +81,10 @@ void main() {
     vec3 colorAttennuation = computeAttennuation(pixelThickness * 10);
 
     vec3 refractionDir   = refract(-viewDir, N, 1 / refractiveIndex);
-    vec3 refractionColor = colorAttennuation * texture(environmentColourTex, uv + refractionDir.xy * pixelThickness * 1).xyz;
+    vec3 refractionColor = colorAttennuation * texture(environmentColourTex, uv + refractionDir.xy * pixelThickness * 0.5).xyz;
 
     fresnelRatio = mix(fresnelRatio, 1, .15);
-    vec4 finalColour = vec4((mix(refractionColor, reflectionColor, fresnelRatio) + fluidColour), pixelThickness*10);
+    vec4 finalColour = vec4((mix(refractionColor, reflectionColor, fresnelRatio) + fluidColour), 0.1 + pixelThickness*10);
 
     if (showDiffuse) {
         FragColour = vec4(ambient + diffuse + specular, 1);
