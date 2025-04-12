@@ -491,7 +491,7 @@ class Hair {
     float f_l_drag = 0.98f;  // vertex air resistance
     float f_a_drag = 0.6f;   // rod rotation resistance
     float f_porosity = 0.1;
-    float f_clumping = 0.1;
+    float f_clumping = 0;
 
     /* Hair */
     mat4 headTrans = translate(mat4(1), vec3(150, 6, 150));

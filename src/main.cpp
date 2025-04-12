@@ -195,6 +195,7 @@ void displayUI() {
                 ImGui::DragFloat3("Torque", &sim->hair->torque.x, 0.1f, -100, 100);
                 ImGui::DragFloat("Drag", &sim->hair->f_l_drag, 0.001f, 0, 1);
                 ImGui::DragFloat("Angular Drag", &sim->hair->f_a_drag, 0.001f, 0, 1);
+                ImGui::DragFloat("Clumping", &sim->hair->f_clumping, 0.001f, -100, 100);
                 ImGui::NewLine();
                 ImGui::TreePop();
             }

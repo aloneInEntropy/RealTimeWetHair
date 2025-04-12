@@ -600,7 +600,7 @@ class Fluid {
     float f_cohesion = 40.f;
     float f_curvature = 1e-3f;
     float f_viscosity = 0.3f;
-    float f_adhesion = 0;
+    float f_adhesion = 100.f;
 
     /* Rendering */
     bool showOutline = true;

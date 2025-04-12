@@ -141,16 +141,16 @@ void Simulation::simulate() {
                     glDispatchCompute(ceil((hairParticleCount + fluidParticleCount) / DISPATCH_SIZE) + 1, 1, 1);
                     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
                     break;
-                // case PREDICT_POROUS:
-                //     glDispatchCompute(ceil(porousParticleCount / DISPATCH_SIZE) + 1, 1, 1);
-                //     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-                //     break;
+                case PREDICT_POROUS:
+                    glDispatchCompute(ceil(porousParticleCount / DISPATCH_SIZE) + 1, 1, 1);
+                    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+                    break;
                 case RESOLVE_COLLISIONS:
                     glDispatchCompute(ceil(totalParticleCount / DISPATCH_SIZE) + 1, 1, 1);
                     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
                     break;
-                case BEND_TWIST_CONSTRAINT:
                 case STRETCH_SHEAR_CONSTRAINT:
+                case BEND_TWIST_CONSTRAINT:
                     for (int iter = 0; iter < simulationIterations; ++iter) {
                         simulationShader->setInt("rbgs", 0);
                         glDispatchCompute(ceil((hairParticleCount / 2) / DISPATCH_SIZE) + 1, 1, 1);
@@ -173,10 +173,10 @@ void Simulation::simulate() {
                     glDispatchCompute(ceil((hairParticleCount + fluidParticleCount) / DISPATCH_SIZE) + 1, 1, 1);
                     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
                     break;
-                // case UPDATE_POROUS:
-                //     glDispatchCompute(ceil(porousParticleCount / DISPATCH_SIZE) + 1, 1, 1);
-                //     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-                //     break;
+                case UPDATE_POROUS:
+                    glDispatchCompute(ceil(porousParticleCount / DISPATCH_SIZE) + 1, 1, 1);
+                    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+                    break;
                 default:
                     break;
             }

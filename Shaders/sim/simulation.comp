@@ -4,7 +4,9 @@
 
 layout (local_size_x = LOCAL_SIZE) in;
 
-// todo: fix nan values (that are in hair only, for some reason)
+// // todo: fix nan values (that are in hair only, for some reason)
+// todo: fix weird stack of fluid particles that sometimes occurs
+// todo: fast movement of porous particles seems to make fluid particles nan
 /* ==================================================================== Enums ==================================================================== */
 /* Simulation stages */
 #define APPLY_EXTERNAL_FORCES 0
@@ -244,7 +246,7 @@ int getTailRod(uint j) { return getTailRod(int(j)); }
 const float perm_K = 1e-11; // [Lin15]
 const float off_K = 0.2; // [Lin15]
 const mat3 K = mat3(perm_K, off_K,off_K, off_K,perm_K,off_K, off_K,off_K,perm_K); // [LAD08]
-const float collisionResolutionSpeed = .08;
+const float collisionResolutionSpeed = 10;
 
 /* ========================================================================================================================================================= */
 /* ====================================================================== Simulation ====================================================================== */
@@ -321,7 +323,7 @@ void resolveCollisions(int i_g) {
 float calculateSaturation(int i_p) {
     int i_g = pToG(i_p);
     if (particles[i_g].t != PORE) return 0;
-    return restDensityInv * (1/particles[i_g].w) / (f_porosity * poreData[i_p].volume);
+    return restDensityInv * (1/particles[i_g].w) / (f_porosity * poreData[i_p].volume + 1e-6);
 }
 
 // compute the change in fluid mass when near porous particles
@@ -379,7 +381,8 @@ void computePorousVolume(int i_p) {
         }
     }
 
-    poreData[i_p].volume = 1 / volume;
+    float vol = (isinf(1 / volume) || isnan(1 / volume)) ? 0 : 1 / volume;
+    poreData[i_p].volume = vol;
 }
 
 // compute the porous hair or fluid density.
@@ -445,9 +448,10 @@ void computeViscosity(int i_f) {
                         int j_f = gToF(j_g);
                         nV += vji * (1 / (particles[j_g].w * fluidDensities[j_f] + 1e-6)) * poly6Kernel(xij, smoothingRadius); // XSPH viscosity
                     } else if (particles[j_g].t == PORE) {
-                        // /* [AI12], Eq.11, 13-14 */
+                        // todo
+                        /* [AI12], Eq.11, 13-14 */
                         // int j_p = gToP(j_g);
-                        // float fluidRigidVisc = (smoothingRadius * dt) / (2 * fluidDensities[i_f]);  // viscosity coefficient multiplied in later
+                        // float fluidRigidVisc = (smoothingRadius * dt) / (2 * fluidDensities[i_f] + 1e-6);  // viscosity coefficient multiplied in later
                         // float bigPi = -fluidRigidVisc *
                         //                 (min(dot(vij, xij), 0.f)) / (sqLen(xij) + smoothingRadius * smoothingRadius * 0.01);
                         // nV += -(imass) *
@@ -637,8 +641,8 @@ void densityConstraint(int i_f) {
                         float p6den = poly6Kernel(corr_q, smoothingRadius);
                         float corr = -corr_k * pow(p6num / p6den, corr_n);
                         if (particles[j_g].t == FLUID) {
+                            int j_f = gToF(j_g);
                             float jmass = 1.f / particles[j_g].w;
-                            int j_f = j_g - hairParticleCount;
                             
                             /* [MM13, Eq. 13] */
                             deltaP += cGrad * (lambdas[i_f] + lambdas[j_f] + corr);
@@ -659,12 +663,12 @@ void densityConstraint(int i_f) {
                             vec3 surfaceTension = K * (cohesion + curvature);                           // [AAT13, Eq. 5]
                             deltaP += surfaceTension * dt;
                         } else if (particles[j_g].t == PORE) {
-                            // todo
-                            // int j_p = j_g - hairParticleCount - fluidParticleCount;
-                            // /* apply hair adhesion [AAT13, Eq. 6] */
-                            // deltaP += -f_adhesion * imass * (restDensity * poreData[j_p].volume) * AI12AdhesionKernelNorm(pij, smoothingRadius);
+                            int j_p = gToP(j_g);
+                            /* apply hair adhesion [AAT13, Eq. 6] */
+                            deltaP += -f_adhesion * imass * (restDensity * poreData[j_p].volume) * AI12AdhesionKernelNorm(pij, smoothingRadius) * dt;
 
-                            // /* apply modified artificial pressure [Lin15, Eq. 7] and [MM13, Eq. 13] */
+                            // todo
+                            /* apply modified artificial pressure [Lin15, Eq. 7] and [MM13, Eq. 13] */
                             // deltaP += -imass * (1-calculateSaturation(j_p)) * 
                             //     restDensity * (restDensity * poreData[j_p].volume) * 
                             //     (corr/(fluidDensities[i_f]*fluidDensities[i_f])) * cGrad;
@@ -700,14 +704,15 @@ void computeClumpingForce(int i_p) {
                 for (int s = start; s < end; ++s) {
                     int j_g = cellEntries[s];
                     if (particles[j_g].t == PORE) {
-                        int j_p = j_g - hairParticleCount - fluidParticleCount; // convert to local (porous) particle index
+                        int j_p = gToP(j_g);
                         float avgSat = (calculateSaturation(i_p) + calculateSaturation(j_p)) / 2;
                         float psi_i = restDensity * poreData[i_p].volume;
                         float psi_j = restDensity * poreData[j_p].volume;
                         float U = 1 - min(1, poreData[i_p].density * restDensityInv);
                         vec3 dff = (ps[i_g] - ps[j_g]).xyz;
+                        if (sqLen(dff) == 0) continue;
                         // todo: replace kernel with [Lin15, Eq.12]
-                        force += -f_clumping * avgSat * U * psi_i * psi_j * poly6Kernel(dff, smoothingRadius) * normalize(dff); // [Lin15, Eq. 11]
+                        force += avgSat * U * psi_i * psi_j * poly6Kernel(dff, smoothingRadius) * normalize(dff); // [Lin15, Eq. 11]
                     }
                 }
             }
@@ -715,8 +720,8 @@ void computeClumpingForce(int i_p) {
     }
 
     // apply clumping forces to connected hair particles
-    ps[poreData[i_p].startIndex] += vec4(force * poreData[i_p].startStrength, 0);
-    ps[poreData[i_p].endIndex] += vec4(force * poreData[i_p].endStrength, 0);
+    ps[poreData[i_p].startIndex] += vec4(-f_clumping * force * poreData[i_p].startStrength, 0);
+    ps[poreData[i_p].endIndex] += vec4(-f_clumping * force * poreData[i_p].endStrength, 0);
 }
 
 void predict(int i_g) {
