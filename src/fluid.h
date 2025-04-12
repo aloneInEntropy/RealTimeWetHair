@@ -597,10 +597,10 @@ class Fluid {
     float relaxationEpsilon = 1e-2f;
     float SOR = 1.7;
     float k = 1;  // stiffness
-    float f_cohesion = 40.f;
+    float f_cohesion = 80.f;
     float f_curvature = 1e-3f;
-    float f_viscosity = 0.3f;
-    float f_adhesion = 100.f;
+    float f_viscosity = 1.3f;
+    float f_adhesion = 250.f;
 
     /* Rendering */
     bool showOutline = true;

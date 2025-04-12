@@ -8,8 +8,11 @@ layout (local_size_x = LOCAL_SIZE) in;
 // // todo: fix weird stack of fluid particles that sometimes occurs
 // // todo: fast movement of porous particles seems to make fluid particles nan
 // // todo: limit hair velocities?
-// todo: better clumping effects
-// todo: hair-hair collisions
+// // todo: better clumping effects
+// // todo: hair-hair collisions
+// todo: separate bounds for fluid only
+// todo: fluid mass diffusion.
+// * buffers: pore velocity (add to struct), 
 /* ==================================================================== Enums ==================================================================== */
 /* Simulation stages */
 #define APPLY_EXTERNAL_FORCES 0
@@ -175,6 +178,8 @@ layout(location = 30) uniform vec3 up;                  // global up direction
 layout(location = 31) uniform mat4 headTrans;           // head transform
 layout(location = 32) uniform float headRad;            // head radius
 layout(location = 33) uniform int poreSamples;          // pore sampling frequency
+layout(location = 34) uniform float gridCellSize;       // grid cell size (here for clarity; used in helpers.comp)
+layout(location = 35) uniform int simulationTick;       // simulation tick
 
 /* ==================================================================== Grid ==================================================================== */
 /* Defined in helper.comp */
@@ -248,7 +253,7 @@ int getTailRod(uint j) { return getTailRod(int(j)); }
 vec3 clampAndReset(vec3 v, vec3 lo, vec3 hi, float new_value) {
     vec3 vv = v;
     for (int i = 0; i < 3; ++i) {
-        if (v[i] >= hi[i] || v[i] <= lo[i]) vv[i] = 0;
+        if (v[i] >= hi[i] || v[i] <= lo[i]) vv[i] = new_value;
     }
     return vv;
 }
@@ -258,9 +263,12 @@ const float perm_K = 1e-11; // [Lin15]
 const float off_K = 0.2; // [Lin15]
 const mat3 K = mat3(perm_K, off_K,off_K, off_K,perm_K,off_K, off_K,off_K,perm_K); // [LAD08]
 const float collisionResolutionSpeed = 100;
+const float maxSpeed = 50;
 
 /* ========================================================================================================================================================= */
+/* ========================================================================================================================================================= */
 /* ====================================================================== Simulation ====================================================================== */
+/* ========================================================================================================================================================= */
 /* ========================================================================================================================================================= */
 
 // Create the Darboux vector from two adjacent quaternions `j` and `j + 1`. Uses predicted rotations
@@ -296,6 +304,8 @@ void applyExternalForces(int i_hf) {
         // fluid gravity
         particles[i_hf].v += vec4(fv_gravity * dt, 0);
     }
+
+    particles[i_hf].v = vec4(clampAndReset(particles[i_hf].v.xyz, vec3(-maxSpeed), vec3(maxSpeed), 0), 0);
 }
 
 // resolve simple scene collisions
@@ -318,12 +328,28 @@ void resolveCollisions(int i_g) {
     vec3 halfBounds = (bounds - vec3(particleRadius)) / 2.f;
     ps[i_g] = vec4(clampV(vec3(ps[i_g]), centre - halfBounds, centre + halfBounds), 0); // clamp to fluid range
 
-    /* Project particles outside head */
+    /* Hair particle-particle collision */
     if (particles[i_g].t == HAIR) {
         int i_h = int(i_g);
         if (i_h == getRootVertex(i_h)) return;
+        ivec3 cell = posToCell(ps[i_g]);
+        uint key = flatten(cell);
+        int start = startIndices[key].startIndex;
+        int end = startIndices[key].startIndex + startIndices[key].particlesInBucket;
+        for (int s = start; s < end; ++s) {
+            int j_g = cellEntries[s];
+            if (particles[j_g].t == HAIR && j_g != i_g) {
+                if (sqLen(vec3(ps[i_g] - ps[j_g])) < particleRadius * particleRadius) {
+                    vec3 dirToSurface = normalize(vec3(ps[i_g] - ps[j_g]));
+                    float distToSurface = length(ps[i_g].xyz - (ps[j_g].xyz + dirToSurface*particleRadius));
+                    ps[i_g] = particles[i_g].x; // removes velocity
+                    ps[i_g] += vec4(dirToSurface * distToSurface, 0) * collisionResolutionSpeed * dt;
+                }
+            }
+        }
     }
 
+    /* Project particles outside head */
     if (sqLen(vec3(ps[i_g] - headTrans[3])) < headRad * headRad) {
         vec3 dirToSurface = normalize(vec3(ps[i_g] - headTrans[3]));
         float distToSurface = length(ps[i_g].xyz - (headTrans[3].xyz + dirToSurface*headRad));
@@ -707,12 +733,12 @@ void computeClumpingForce(int i_p) {
     int i_g = i_p + hairParticleCount + fluidParticleCount; // convert to global particle index
     vec3 force = vec3(0);
     ivec3 cell = posToCell(ps[i_g]);
-    int minX = max(cell.x - 1, 0);
-    int maxX = max(1, cell.x + 1);
-    int minY = max(cell.y - 1, 0);
-    int maxY = max(1, cell.y + 1);
-    int minZ = max(cell.z - 1, 0);
-    int maxZ = max(1, cell.z + 1);
+    int minX = max(cell.x - 2, 0);
+    int maxX = max(1, cell.x + 2);
+    int minY = max(cell.y - 2, 0);
+    int maxY = max(1, cell.y + 2);
+    int minZ = max(cell.z - 2, 0);
+    int maxZ = max(1, cell.z + 2);
     for (int x = minX; x <= maxX; ++x) {
         for (int y = minY; y <= maxY; ++y) {
             for (int z = minZ; z <= maxZ; ++z) {
@@ -724,6 +750,14 @@ void computeClumpingForce(int i_p) {
                     int j_g = cellEntries[s];
                     if (particles[j_g].t == PORE) {
                         int j_p = gToP(j_g);
+                        if (vertexStrandMap[poreData[j_p].startIndex] == vertexStrandMap[poreData[i_p].startIndex]) continue;
+                        /* 
+                        todo: try different clumping restrictions: 
+                        * don't clump with same strand
+                        * don't clump if start indices are more than half the strand length apart
+                        * don't clump if start indices are closer to the root / clump with a gradient from the root
+                        * clump with a lower priority
+                        */
                         if (poreData[j_p].density < 0.2) continue;
                         float avgSat = (calculateSaturation(i_p) + calculateSaturation(j_p)) / 2;
                         float psi_i = restDensity * poreData[i_p].volume;
@@ -732,8 +766,9 @@ void computeClumpingForce(int i_p) {
                         // float U = 1 / poreData[i_p].density;
                         vec3 dff = (ps[i_g] - ps[j_g]).xyz;
                         if (sqLen(dff) == 0) continue;
-                        // todo: replace kernel with [Lin15, Eq.12]
-                        force += avgSat * U * psi_i * psi_j * AI12STKernelNorm(dff, smoothingRadius); // [Lin15, Eq. 11]
+                        vec3 nforce = avgSat * U * psi_i * psi_j * AI12STKernelNorm(dff, smoothingRadius); // [Lin15, Eq. 11]
+                        // if (vertexStrandMap[poreData[j_p].startIndex] == vertexStrandMap[poreData[i_p].startIndex]) { force += nforce/10; continue; }
+                        force += nforce;
                     }
                 }
             }
@@ -790,8 +825,8 @@ void updateVelocities(int i_g) {
     vec3 halfBounds = (bounds - vec3(particleRadius)) / 2.f;
     ps[i_g] = vec4(clampV(vec3(ps[i_g]), centre - halfBounds, centre + halfBounds), 0); // clamp to fluid range
     if (particles[i_g].t == HAIR) {
-        particles[i_g].v = vec4(clampV(f_l_drag * vec3(ps[i_g] - particles[i_g].x) / dt, vec3(-99), vec3(99)), 0);
-        particles[i_g].v = vec4(clampAndReset(particles[i_g].v.xyz, vec3(-99), vec3(99), 0), 0);
+        particles[i_g].v = vec4(clampV(f_l_drag * vec3(ps[i_g] - particles[i_g].x) / dt, vec3(-maxSpeed), vec3(maxSpeed)), 0);
+        particles[i_g].v = vec4(clampAndReset(particles[i_g].v.xyz, vec3(-maxSpeed), vec3(maxSpeed), 0), 0);
         // particles[i_g].v = f_l_drag * (ps[i_g] - particles[i_g].x) / dt;
         particles[i_g].x = ps[i_g] * ss_SOR + particles[i_g].x * (1 - ss_SOR);
         ps[i_g] = particles[i_g].x;
@@ -803,11 +838,11 @@ void updateVelocities(int i_g) {
         vec3 nv = f_a_drag * Im((2.f * qmul(conjugate(rods[j_h].q), us[j_h])) / dt);
         rods[j_h].v = vec4(nv, 0);
         // todo: this allows for more hair styles but produces undesirable results if moving too quickly
-        rods[j_h].q = qnorm(us[j_h] * (bt_SOR/2) + rods[j_h].q * (1 - (bt_SOR/2)));
+        // rods[j_h].q = qnorm(us[j_h] * (bt_SOR/2) + rods[j_h].q * (1 - (bt_SOR/2)));
     } else if (particles[i_g].t == FLUID) {
         // particles[i_g].v = (ps[i_g] - particles[i_g].x) / dt;
-        particles[i_g].v = vec4(clampV(vec3(ps[i_g] - particles[i_g].x) / dt, vec3(-99), vec3(99)), 0);
-        particles[i_g].v = vec4(clampAndReset(particles[i_g].v.xyz, vec3(-99), vec3(99), 0), 0);
+        particles[i_g].v = vec4(clampV(vec3(ps[i_g] - particles[i_g].x) / dt, vec3(-maxSpeed), vec3(maxSpeed)), 0);
+        particles[i_g].v = vec4(clampAndReset(particles[i_g].v.xyz, vec3(-maxSpeed), vec3(maxSpeed), 0), 0);
         particles[i_g].x = ps[i_g] * dn_SOR + particles[i_g].x * (1 - dn_SOR);
         ps[i_g] = particles[i_g].x;
     }

@@ -261,9 +261,8 @@ class Hair {
         inertia = diagonal3x3(tensor);
     }
 
-    void samplePorousParticles(int smpls) {
+    void samplePorousParticles() {
         assert(fluidLoaded && "fluid not loaded");
-        poreSamples = smpls;
         for (int s = 0; s < numStrands; ++s) {
             for (int i = hairStrands[s].startVertexIdx; i < hairStrands[s].startVertexIdx + hairStrands[s].nVertices - 1; ++i) {
                 vec3 a = vec3(particles[i].x);
@@ -490,7 +489,7 @@ class Hair {
     /* Physics */
     float f_l_drag = 0.98f;  // vertex air resistance
     float f_a_drag = 0.6f;   // rod rotation resistance
-    float f_porosity = 0.2;
+    float f_porosity = 1;
     float f_clumping = -0.0002;
 
     /* Hair */

@@ -12,7 +12,7 @@ Simulation::Simulation(HairConfigs hairConfigs, FluidConfig fluidConfig) {
     fluidParticleCount = particles.size() - hairParticleCount;
     fluidLoaded = true;
     porousParticleStartIdx = fluidParticleCount;
-    hair->samplePorousParticles(1);
+    hair->samplePorousParticles();
     porousParticleCount = particles.size() - hairParticleCount - fluidParticleCount;
     poresLoaded = true;
     totalParticleCount = hairParticleCount + fluidParticleCount + porousParticleCount;
@@ -107,6 +107,7 @@ void Simulation::simulate() {
     simulationShader->setFloat("headRad", hair->renderHeadRadius);
     simulationShader->setInt("poreSamples", hair->poreSamples);
     simulationShader->setFloat("gridCellSize", grid->cellSize);
+    simulationShader->setInt("simulationTick", simulationTick);
 
     // todo: check over this several times
 
