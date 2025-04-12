@@ -26,7 +26,7 @@ int porousParticleStartIdx = 0;
 int porousParticleCount = 0;
 int totalParticleCount = 0;
 vec3 centre{150, 50, 150};
-vec3 bounds{70, 95, 70};
+vec3 bounds{70, 90, 70};
 vec3 fv_gravity = vec3(0, -10, 0);
 
 bool hairLoaded = false;

@@ -63,7 +63,7 @@ class Fluid {
 
     void createParticles(int n, PD pd, vec3 offset = vec3(0)) {
         int cubeRoot = ceil(pow(n, 1.f / 3.f) - 1e-5);  // ceil(n) = n + 1 if n is a whole number, or some other floating point bullshit
-        float spacing = smoothingRadius * .95f;
+        float spacing = smoothingRadius * .75f;
         nFluidParticles = n;
         vec3 halfBounds = (bounds - vec3(particleRadius)) / 2.f;
 
@@ -608,7 +608,7 @@ class Fluid {
     bool showBounds = true;
     float depthStrength = 150;
     float thicknessStrength = 0.5;
-    int renderStage = SPRITE;
+    int renderStage = COMPOSITION;
     int kernelHalfWidth = 3;
     int maxKernelHalfWidth = 11;
     bool showDiffuseOnly = false;

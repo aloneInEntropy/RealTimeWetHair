@@ -196,6 +196,7 @@ void displayUI() {
                 ImGui::DragFloat("Drag", &sim->hair->f_l_drag, 0.001f, 0, 1);
                 ImGui::DragFloat("Angular Drag", &sim->hair->f_a_drag, 0.001f, 0, 1);
                 ImGui::DragFloat("Clumping", &sim->hair->f_clumping, 0.001f, -100, 100);
+                ImGui::DragFloat("Porosity", &sim->hair->f_porosity, 0.001f, -100, 100);
                 ImGui::NewLine();
                 ImGui::TreePop();
             }
@@ -221,8 +222,8 @@ void displayUI() {
                 ImGui::SliderFloat("Smoothing Radius", &sim->fluid->smoothingRadius, 0.01, 1000);
                 ImGui::DragFloat("Cohesion", &sim->fluid->f_cohesion, 0.1f, 0, 3000);
                 ImGui::DragFloat("Curvature", &sim->fluid->f_curvature, 0.0001f, 0, 1);
-                ImGui::SliderFloat("Adhesion", &sim->fluid->f_adhesion, 0, 10000);
-                ImGui::SliderFloat("Viscosity", &sim->fluid->f_viscosity, 0, 1);
+                ImGui::DragFloat("Adhesion", &sim->fluid->f_adhesion, 0.1, 0, 10000);
+                ImGui::DragFloat("Viscosity", &sim->fluid->f_viscosity, 0.01, 0, 3);
                 ImGui::TreePop();
             }
 

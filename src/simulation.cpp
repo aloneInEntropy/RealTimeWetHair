@@ -120,6 +120,8 @@ void Simulation::simulate() {
                     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
                     break;
                 // case DIFFUSION:
+                //     glDispatchCompute(ceil(fluidParticleCount / DISPATCH_SIZE) + 1, 1, 1);
+                //     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
                 //     break;
                 case REP_VOLUME:
                     glDispatchCompute(ceil(porousParticleCount / DISPATCH_SIZE) + 1, 1, 1);
@@ -165,10 +167,10 @@ void Simulation::simulate() {
                     glDispatchCompute(ceil(fluidParticleCount / DISPATCH_SIZE) + 1, 1, 1);
                     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
                     break;
-                // case CLUMPING:
-                //     glDispatchCompute(ceil(porousParticleCount / DISPATCH_SIZE) + 1, 1, 1);
-                //     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-                //     break;
+                case CLUMPING:
+                    glDispatchCompute(ceil(porousParticleCount / DISPATCH_SIZE) + 1, 1, 1);
+                    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+                    break;
                 case UPDATE_VELOCITIES:
                     glDispatchCompute(ceil((hairParticleCount + fluidParticleCount) / DISPATCH_SIZE) + 1, 1, 1);
                     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);

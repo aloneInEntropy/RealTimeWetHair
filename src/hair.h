@@ -490,17 +490,17 @@ class Hair {
     /* Physics */
     float f_l_drag = 0.98f;  // vertex air resistance
     float f_a_drag = 0.6f;   // rod rotation resistance
-    float f_porosity = 0.1;
-    float f_clumping = 0;
+    float f_porosity = 0.2;
+    float f_clumping = -0.0002;
 
     /* Hair */
     mat4 headTrans = translate(mat4(1), vec3(150, 6, 150));
     vec4 hairColour = vec4(42, 25, 5, 255) / 255.f;
     vec4 guideColour = vec4(105, 175, 55, 255) / 255.f;
     float sRad = 0.05;       // rod thickness
-    float rad = .5f;         // strand coil radius
-    float strandLength = 5;  // length of a strand
-    int nCurls = 2;          // number of curls in a strand
+    float rad = 1.f;         // strand coil radius
+    float strandLength = 15;  // length of a strand
+    int nCurls = 6;          // number of curls in a strand
     int poreSamples = 1;
 
     /* ----- Settings ----- */

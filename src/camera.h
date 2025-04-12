@@ -96,8 +96,8 @@ class Camera {
     float yaw = 270.0;           // y-axis rotation (horizontal)
     float roll = 0.0;            // z-axis rotation
     float sensitivity = .15;     // Camera sensitivity
-    float baseSpeed = 5.0f;      // Walking speed (movement speed)
-    float sprintSpeed = 30.0f;   // Sprinting speed (movement speed)
+    float baseSpeed = 60.0f;      // Walking speed (movement speed)
+    float sprintSpeed = 125.0f;   // Sprinting speed (movement speed)
     float speed = baseSpeed;     // Camera speed (movement speed)
     bool CAN_FLY = true;         // can the player fly (i.e., move on y-axis at will)?
 };
