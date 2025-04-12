@@ -104,8 +104,8 @@ void main() {
 	for (int i = 0; i < nSpotLights; i++)
 	result += CalcSpotLight(spotLights[i], N, tFragPos, viewDir);
 
-	FragColour = vec4(result, 1.0);
-	// FragColour = vec4(N, 1.0);
+	// FragColour = vec4(result, 1.0);
+	FragColour = vec4(N, 1.0);
 
 	vec4 pixelPos = vec4(eyeCoord, 1);
 	vec4 clipSpacePos = proj * pixelPos;

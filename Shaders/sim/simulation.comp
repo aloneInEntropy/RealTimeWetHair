@@ -107,7 +107,7 @@ layout(std430, binding=7) buffer OmegasBuffer {
     vec4 omegas[];
 };
 
-layout(std430, binding=8) buffer HairData {
+layout(std430, binding=8) buffer PorousData {
     PoreData poreData[];
 };
 
@@ -172,10 +172,12 @@ layout(location = 32) uniform float headRad;            // head radius
 layout(location = 33) uniform int poreSamples;          // pore sampling frequency
 
 /* ==================================================================== Grid ==================================================================== */
+/* Defined in helper.comp */
 ivec3 posToCell(vec4 v);
 uint flatten(ivec3 cell);
 
 /* ==================================================================== Kernels ==================================================================== */
+/* Defined in kernels.comp */
 float poly6Kernel(vec3 r, float h);
 vec3 poly6KernelGrad(vec3 r, float h);
 float spikyKernel(vec3 r, float h);
@@ -242,7 +244,7 @@ int getTailRod(uint j) { return getTailRod(int(j)); }
 const float perm_K = 1e-11; // [Lin15]
 const float off_K = 0.2; // [Lin15]
 const mat3 K = mat3(perm_K, off_K,off_K, off_K,perm_K,off_K, off_K,off_K,perm_K); // [LAD08]
-const float collisionResolutionSpeed = 10;
+const float collisionResolutionSpeed = .08;
 
 /* ========================================================================================================================================================= */
 /* ====================================================================== Simulation ====================================================================== */
@@ -309,6 +311,7 @@ void resolveCollisions(int i_g) {
     if (sqLen(vec3(ps[i_g] - headTrans[3])) < headRad * headRad) {
         vec3 dirToSurface = normalize(vec3(ps[i_g] - headTrans[3]));
         float distToSurface = length(ps[i_g].xyz - (headTrans[3].xyz + dirToSurface*headRad));
+        // ps[i_g] = particles[i_g].x; // removes velocity
         ps[i_g] += vec4(dirToSurface * distToSurface, 0) * collisionResolutionSpeed * dt;
     }
 }
@@ -399,9 +402,10 @@ void computeDensity(int i_fp) {
                 int start = startIndices[key].startIndex;
                 int end = startIndices[key].startIndex + startIndices[key].particlesInBucket;
                 for (int s = start; s < end; ++s) {
-                    int j = cellEntries[s];
-                    density += (1.f / particles[j].w) *
-                                poly6Kernel(vec3(ps[i_g] - ps[j]), smoothingRadius);
+                    int j_g = cellEntries[s];
+                    if (particles[j_g].t != FLUID) continue;
+                    density += (1.f / particles[j_g].w) *
+                                poly6Kernel(vec3(ps[i_g] - ps[j_g]), smoothingRadius);
                 }
             }
         }
@@ -416,7 +420,7 @@ void computeDensity(int i_fp) {
 void computeViscosity(int i_f) {
     int i_g = fToG(i_f);
     vec3 nV = vec3(0);
-    float mass_i = 1.f / particles[i_g].w;
+    float imass = 1.f / particles[i_g].w;
     ivec3 cell = posToCell(ps[i_g]);
     int minX = max(cell.x - 1, 0);
     int maxX = max(1, cell.x + 1);
@@ -438,17 +442,18 @@ void computeViscosity(int i_f) {
                     vec3 xij = vec3(ps[i_g] - ps[j_g]);
                     if (particles[j_g].t == FLUID) {
                         /* [SB12], Eq. 2 */
-                        nV += vji * (1 / (particles[j_g].w * fluidDensities[j_g])) * spikyKernel(xij, smoothingRadius); // XSPH viscosity
+                        int j_f = gToF(j_g);
+                        nV += vji * (1 / (particles[j_g].w * fluidDensities[j_f] + 1e-6)) * poly6Kernel(xij, smoothingRadius); // XSPH viscosity
                     } else if (particles[j_g].t == PORE) {
-                        int j_p = gToP(j_g);
-                        /* [AI12], Eq.11, 13-14 */
-                        float fluidRigidVisc = (smoothingRadius * dt) / (2 * fluidDensities[i_f]);  // viscosity coefficient multiplied in later
-                        float bigPi = -fluidRigidVisc *
-                                        (min(dot(vij, xij), 0.f)) / (sqLen(xij) + smoothingRadius * smoothingRadius * 0.01);
-                        nV += -(mass_i) *
-                                restDensity * poreData[j_p].volume *
-                                bigPi *
-                                spikyKernelGrad(vec3(ps[i_g] - ps[j_g]), smoothingRadius);
+                        // /* [AI12], Eq.11, 13-14 */
+                        // int j_p = gToP(j_g);
+                        // float fluidRigidVisc = (smoothingRadius * dt) / (2 * fluidDensities[i_f]);  // viscosity coefficient multiplied in later
+                        // float bigPi = -fluidRigidVisc *
+                        //                 (min(dot(vij, xij), 0.f)) / (sqLen(xij) + smoothingRadius * smoothingRadius * 0.01);
+                        // nV += -(imass) *
+                        //         restDensity * poreData[j_p].volume *
+                        //         bigPi *
+                        //         spikyKernelGrad(vec3(ps[i_g] - ps[j_g]), smoothingRadius);
                     }
                 }
             }
@@ -485,6 +490,7 @@ vec3 calcFluidConstraintGrad(int i_g, int j_g) {
                     int end = startIndices[key].startIndex + startIndices[key].particlesInBucket;
                     for (int s = start; s < end; ++s) {
                         int k_g = cellEntries[s];
+                        if (particles[k_g].t != FLUID) continue;
                         cGrad += (1.f / particles[k_g].w) * spikyKernelGrad(vec3(ps[i_g] - ps[k_g]), smoothingRadius);
                     }
                 }
@@ -501,8 +507,7 @@ vec3 calcFluidConstraintGrad(int i_g, int j_g) {
 // compute fluid auxillary quantities (curvature normals, lambdas, and omegas)
 // `i_f` represents fluid particles (dispatched with fluidParticleCount)
 void computeFluidAuxillaries(int i_f) {
-    int i_g = i_f + hairParticleCount;
-    float imass = 1.f / particles[i_g].w;  // inverse of an inverse
+    int i_g = fToG(i_f);
     float numer = calcFluidConstraint(i_f);
     float denom = 0;
     vec3 cNorm = vec3(0);
@@ -525,10 +530,10 @@ void computeFluidAuxillaries(int i_f) {
                     int j_g = cellEntries[s];
                     if (particles[j_g].t != FLUID) continue;
 
-                    int j_f = j_g - hairParticleCount;
+                    int j_f = gToF(j_g);
                     float jmass = 1.f / particles[j_g].w;
                     denom += jmass * sqLen(calcFluidConstraintGrad(i_g, j_g));
-                    cNorm += jmass * spikyKernelGrad(vec3(ps[i_g] - ps[j_g]), smoothingRadius) / fluidDensities[j_f];
+                    cNorm += jmass * spikyKernelGrad(vec3(ps[i_g] - ps[j_g]), smoothingRadius) / (fluidDensities[j_f] + 1e-6);
 
                     /* vorticity confinement [MM13, Eq. 15] */
                     vec3 offs = vec3(particles[j_g].v - particles[i_g].v);
@@ -655,14 +660,14 @@ void densityConstraint(int i_f) {
                             deltaP += surfaceTension * dt;
                         } else if (particles[j_g].t == PORE) {
                             // todo
-                            int j_p = j_g - hairParticleCount - fluidParticleCount;
-                            /* apply hair adhesion [AAT13, Eq. 6] */
-                            deltaP += -f_adhesion * imass * (restDensity * poreData[j_p].volume) * AI12AdhesionKernelNorm(pij, smoothingRadius);
+                            // int j_p = j_g - hairParticleCount - fluidParticleCount;
+                            // /* apply hair adhesion [AAT13, Eq. 6] */
+                            // deltaP += -f_adhesion * imass * (restDensity * poreData[j_p].volume) * AI12AdhesionKernelNorm(pij, smoothingRadius);
 
-                            /* apply modified artificial pressure [Lin15, Eq. 7] and [MM13, Eq. 13] */
-                            deltaP += -imass * (1-calculateSaturation(j_p)) * 
-                                restDensity * (restDensity * poreData[j_p].volume) * 
-                                (corr/(fluidDensities[i_f]*fluidDensities[i_f])) * cGrad;
+                            // /* apply modified artificial pressure [Lin15, Eq. 7] and [MM13, Eq. 13] */
+                            // deltaP += -imass * (1-calculateSaturation(j_p)) * 
+                            //     restDensity * (restDensity * poreData[j_p].volume) * 
+                            //     (corr/(fluidDensities[i_f]*fluidDensities[i_f])) * cGrad;
                         }
                     }
                 }
@@ -770,6 +775,7 @@ void updateVelocities(int i_g) {
         // todo: this allows for more hair styles but produces undesirable results if moving too quickly
         // rods[j_h].q = qnorm(us[j_h] * (bt_SOR/2) + rods[j_h].q * (1 - (bt_SOR/2)));
     } else if (particles[i_g].t == FLUID) {
+        particles[i_g].v = vec4(clampV(vec3(ps[i_g] - particles[i_g].x) / dt, vec3(-9999), vec3(9999)), 0);
         particles[i_g].x = ps[i_g] * dn_SOR + particles[i_g].x * (1 - dn_SOR);
         ps[i_g] = particles[i_g].x;
     }

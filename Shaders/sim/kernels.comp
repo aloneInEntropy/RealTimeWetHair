@@ -21,7 +21,7 @@ vec3 poly6KernelGrad(vec3 r, float h) {
     float sdst = dot(r, r);
     if (sdst >= h * h) return vec3(0);
 
-    float dst = sqrt(sdst);
+    float dst = max(sqrt(sdst), 1e-9f);
     float dff = h * h - dst * dst;
     float poly6GradConst = 315.f / (64 * PI * pow(h, 9));
     return dff * dff * poly6GradConst * r;
@@ -31,7 +31,7 @@ float spikyKernel(vec3 r, float h) {
     float sdst = dot(r, r);
     if (sdst >= h * h) return 0;
 
-    float dst = sqrt(sdst);
+    float dst = max(sqrt(sdst), 1e-9f);
     float dff = h - dst;
     float spikyConst = 15.f / (PI * pow(h, 6));
     return dff * dff * dff * spikyConst;

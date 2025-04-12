@@ -63,7 +63,7 @@ class Fluid {
 
     void createParticles(int n, PD pd, vec3 offset = vec3(0)) {
         int cubeRoot = ceil(pow(n, 1.f / 3.f) - 1e-5);  // ceil(n) = n + 1 if n is a whole number, or some other floating point bullshit
-        float spacing = smoothingRadius * .5f;
+        float spacing = smoothingRadius * .95f;
         nFluidParticles = n;
         vec3 halfBounds = (bounds - vec3(particleRadius)) / 2.f;
 
@@ -73,7 +73,7 @@ class Fluid {
                 vec3 p = Util::to3D(i, vec3(cubeRoot));
                 vec3 gridPos = (p - vec3(cubeRoot / 2.f + .5f)) * spacing;
                 gridPos += centre + offset;
-                Particle part = Particle(gridPos, vec3(0), i == 0 ? 0 : .5f, FLUID);
+                Particle part = Particle(gridPos, vec3(0), 1, FLUID);
                 particles.push_back(part);
                 ps.push_back(vec4(gridPos, 0));
             }

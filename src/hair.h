@@ -39,9 +39,9 @@ struct PoreData {
     float startStrength;
     int endIndex;
     float endStrength;
-    float volume;
-    float density;
-    int pd1, pd2;
+    float volume = 0;
+    float density = 0;
+    int pd1, pd2; // padding
 };
 
 struct Rod {
@@ -53,7 +53,7 @@ struct Rod {
     quat q;   // rod orientation
     vec4 v;   // rod velocity
     float w;  // rod inverse mass
-    int pd1, pd2, pd3;
+    int pd1, pd2, pd3; // padding
 };
 
 struct HairStrand {
@@ -76,7 +76,7 @@ struct HairStrand {
     int startRodIdx = 0;
     int endRodIdx = 0;
     float l0 = 0;
-    int pd = 0;  // is this strand a guide strand? 0 if false, 1 if true
+    int pd = 0;  // padding
 };
 
 /* ----- Global variables ----- */
@@ -214,7 +214,7 @@ class Hair {
             p = rotate(q, p);                   // rotate `from` about `axs` with `rotAngle` radians to point it towards `to`
 
             /* Add vertex/particle to this hair strand */
-            Particle part = Particle(p, vec3(0), i == 0 ? 0 : .5f, HAIR);
+            Particle part = Particle(p, vec3(0), i == 0 ? 0 : 1, HAIR);
             particles.push_back(part);
             ps.push_back(vec4(p, 0));
         };
@@ -232,6 +232,7 @@ class Hair {
         vec4 offs = hairStrands[strandIdx].root - particles[vStart].x + headTrans[3];
         for (int i = vStart; i < vStart + nV; ++i) {
             particles[i].x += offs;
+            ps[i] += offs;
         }
     }
 
@@ -245,7 +246,7 @@ class Hair {
             vec3 to = vec3(particles[vStart + j + 1].x - particles[vStart + j].x);
             quat q = quatFromVectors(from, to);
             if (j != 0) q *= rods[rStart + j - 1].q;  // each quaternion rotates depending on the previous one
-            Rod rod = Rod(q, vec3(0), j == 0 ? 0 : .5);
+            Rod rod = Rod(q, vec3(0), j == 0 ? 0 : 1);
             rods.push_back(rod);
             us.push_back(q);
             from = to;
@@ -264,7 +265,7 @@ class Hair {
         assert(fluidLoaded && "fluid not loaded");
         poreSamples = smpls;
         for (int s = 0; s < numStrands; ++s) {
-            for (int i = 0; i < hairStrands[s].nVertices - 1; ++i) {
+            for (int i = hairStrands[s].startVertexIdx; i < hairStrands[s].startVertexIdx + hairStrands[s].nVertices - 1; ++i) {
                 vec3 a = vec3(particles[i].x);
                 vec3 b = vec3(particles[i + 1].x);
                 vec3 d = b - a;
@@ -452,7 +453,7 @@ class Hair {
     float renderHeadRadius = 25;
 
     /* --- Physics buffers --- */
-    vec3 torque;         // hair torque
+    vec3 torque{0};      // hair torque
     mat3 inertia;        // inertia matrix
     vec3 e3 = Util::UP;  // global up (0, 1, 0)
 
@@ -496,10 +497,10 @@ class Hair {
     mat4 headTrans = translate(mat4(1), vec3(150, 6, 150));
     vec4 hairColour = vec4(42, 25, 5, 255) / 255.f;
     vec4 guideColour = vec4(105, 175, 55, 255) / 255.f;
-    float sRad = 0.05;        // rod thickness
+    float sRad = 0.05;       // rod thickness
     float rad = .5f;         // strand coil radius
     float strandLength = 5;  // length of a strand
-    int nCurls = 2;           // number of curls in a strand
+    int nCurls = 2;          // number of curls in a strand
     int poreSamples = 1;
 
     /* ----- Settings ----- */

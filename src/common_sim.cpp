@@ -12,8 +12,8 @@ unsigned predictedPositionBuffer = 0;
 bool play = false;
 float dt = 1.f / 30;
 float sdt = 1.f / 30;
-int simulationSubsteps = 10;
-int simulationIterations = 1;
+int simulationSubsteps = 5;
+int simulationIterations = 5;
 int simulationTick = 0;
 int nextTick = 113;
 bool ticking = false;            // is the simulation actively moving towards the next tick?
@@ -26,7 +26,7 @@ int porousParticleStartIdx = 0;
 int porousParticleCount = 0;
 int totalParticleCount = 0;
 vec3 centre{150, 50, 150};
-vec3 bounds{35, 95, 35};
+vec3 bounds{70, 95, 70};
 vec3 fv_gravity = vec3(0, -10, 0);
 
 bool hairLoaded = false;

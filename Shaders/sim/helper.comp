@@ -1,4 +1,4 @@
-/* Functions for querying the grid. */
+/* Helper functions */
 
 #version 460 core
 
