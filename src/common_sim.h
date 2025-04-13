@@ -104,6 +104,7 @@ extern int fluidParticleCount;
 extern int porousParticleStartIdx;
 extern int porousParticleCount;
 extern int totalParticleCount;
+extern int clumpingRange;
 extern vec3 centre;
 extern vec3 bounds;
 extern vec3 fv_gravity;

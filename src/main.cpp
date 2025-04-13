@@ -21,22 +21,22 @@ void init() {
     /* Generate hairs */
     int rndCnt = 0;
     for (int i = 0; i < renderHead->vertexData.size(); ++i) {
-        if (rndCnt >= 512) break;
+        // if (rndCnt >= 512) break;
         if (renderHead->vertexData[i].pos.y >= 0) {
             // only normals facing out/up
-            hs.push_back({20, vec4(renderHead->vertexData[i].pos, 1), renderHead->vertexData[i].norm});
+            hs.push_back({50, vec4(renderHead->vertexData[i].pos, 1), renderHead->vertexData[i].norm});
             rndCnt++;
         }
     }
 
     headStartPos = vec3(150, 6, 150);
-    FluidConfig fconfig = {10000, DAM_BREAK, vec3(0, 20, 0)};
+    FluidConfig fconfig = {20000, DAM_BREAK, vec3(0, 20, 0)};
     sim = new Sim::Simulation(hs, fconfig);
     sim->hair->headTrans = translate(mat4(1), headStartPos);
 
     SM::camera->lookAt(headStartPos + vec3(0, 30, 0));
     glPointSize(8.0);
-    glLineWidth(3);
+    glLineWidth(1);
 
     startLight->addDirLightAtt(Util::DOWN, vec3(0.2f), vec3(0.2f), vec3(1));
     // startLight->addDirLightAtt(Util::UP, vec3(0.2f), vec3(0.2f), vec3(1));
@@ -59,29 +59,29 @@ void update() {
 }
 
 void display() {
-    sim->fluid->envFBO->bind();
-
+    if (showFluid) {
+        sim->fluid->envFBO->bind();
+    }
     glClearColor(0, 0, 0, 1);
-    // glClearColor(SM::cfg.bgColour.r, SM::cfg.bgColour.g, SM::cfg.bgColour.b, 1);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glEnable(GL_CULL_FACE);   // enable backface culling
     glEnable(GL_DEPTH_TEST);  // enable depth-testing
     glDepthFunc(GL_LESS);     // depth-testing interprets a smaller value as "closer"
     glEnable(GL_BLEND);       // enable colour blending
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
     mat4 view = SM::camera->getViewMatrix();
     mat4 projection = SM::camera->getPerspectiveMatrix();
-
     startLight->use();
     startLight->setLightAtt(view, projection, SM::camera->pos);
     startLight->setPointLightAtt(0, lightPos);
     if (showHead) guideHead->render(sim->hair->headTrans);
     sim->hair->render();
     SM::drawSceneExtras();
-    sim->fluid->envFBO->unbind();
+    if (showFluid) {
+        sim->fluid->envFBO->unbind();
+        sim->fluid->render();
+    }
     
-    sim->fluid->render();
 }
 
 void displayUI() {
@@ -208,10 +208,10 @@ void displayUI() {
                 ImGui::ColorEdit4("Guide Colour", &sim->hair->guideColour.x);
                 ImGui::Checkbox("Show Head", &showHead);
                 ImGui::SameLine();
-                ImGui::Checkbox("Show Lines", &sim->hair->showLines);
+                ImGui::Checkbox("Show Hair", &sim->hair->showLines);
                 ImGui::SameLine();
                 ImGui::Checkbox("Show Points", &sim->hair->showPoints);
-                ImGui::NewLine();
+                ImGui::InputInt("Clumping Range", &CommonSim::clumpingRange);
                 ImGui::TreePop();
             }
         }
@@ -228,6 +228,7 @@ void displayUI() {
             }
 
             if (ImGui::TreeNodeEx("Rendering", ImGuiTreeNodeFlags_SpanAvailWidth)) {
+                ImGui::Checkbox("Show Fluid", &showFluid);
                 ImGui::ColorEdit3("Fluid Colour", &sim->fluid->waterColour.x);
                 ImGui::ColorEdit3("Attenuation Colour", &sim->fluid->attenuationColour.x);
                 ImGui::DragFloat("Depth Strength", &sim->fluid->depthStrength, 0.1f, 0, 1000);

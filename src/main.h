@@ -48,6 +48,7 @@ Shader *startShader;
 Lighting* startLight;
 StaticMesh* renderHead, *guideHead;
 bool showHead = true;
+bool showFluid = true;
 bool showMonkeys = false;
 vec3 lightPos = vec3(0, 3, -5);
 vec3 lightCol = vec3(0.2, 1, 1);

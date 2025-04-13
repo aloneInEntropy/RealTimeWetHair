@@ -106,11 +106,35 @@ layout(std430, binding=14) readonly buffer RodToStrandMap {
 
 layout(location = 0) out vec3 eyeSpacePos;
 layout(location = 1) flat out uint particleID;
+layout(location = 2) out vec3 tangent;
+layout(location = 3) out vec3 fragPos;
+layout(location = 4) out float vWeight;
 
 layout(location = 0) uniform mat4 proj;
 layout(location = 1) uniform mat4 view;
 layout(location = 2) uniform vec3 viewPos;
 layout(location = 3) uniform float nearPlaneHeight;
+
+// Cast a quaternion `q` to a 3x3 matrix. Taken from GLM's implementation
+mat3 toMat3(vec4 q) {
+    mat3 m = mat3(1);
+    float x = q.x;
+    float y = q.y;
+    float z = q.z;
+    float w = q.w;
+
+    m[0][0] = 1 - 2 * (y*y + z*z);
+    m[0][1] = 2 * (x*y + z*w);
+    m[0][2] = 2 * (x*z - w*y);
+    m[1][0] = 2 * (x*y - z*w);
+    m[1][1] = 1 - 2 * (x*x + z*z);
+    m[1][2] = 2 * (y*z + x*w);
+    m[2][0] = 2 * (x*z + y*w);
+    m[2][1] = 2 * (y*z - x*w);
+    m[2][2] = 1 - 2 * (x*x + y*y);
+    
+    return m;
+}
 
 void main() {
     ps[0];
@@ -128,15 +152,28 @@ void main() {
     vertexStrandMap[0];
     rodStrandMap[0];
     particleID = gl_VertexID;
+    if (particleID == hairStrands[vertexStrandMap[particleID]].endVertexIdx) tangent = vec3(0,1,0);
+    else {
+        vec3 UP = vec3(0, 1, 0);
+        // vec3 n = /* mat3(headTrans) *  */toMat3(rods[gl_VertexID - vertexStrandMap[gl_VertexID]].q) * UP; // 
+        vec3 dir = normalize(rods[particleID - vertexStrandMap[particleID]].q.xyz);
+        vec3 right = normalize(cross(dir, UP));
+        vec3 n = normalize(cross(right, dir));
+        // vs_out.n = normalize(rods[gl_VertexID - vertexStrandMap[gl_VertexID]].q.xyz);
+        tangent = dir;
+    }
+    int strandCountI = hairStrands[vertexStrandMap[particleID]].nVertices;
+    int strandStartI = hairStrands[vertexStrandMap[particleID]].startVertexIdx;
+    vWeight = (particleID - strandStartI + 1.f) / float(strandCountI);
     // particleID = gl_InstanceID + gl_VertexID;
     // particleID = gl_BaseInstance + gl_VertexID;
     // particleID = gl_BaseVertex + gl_VertexID;
 	vec3 pos = particles[particleID].x.xyz;
+    fragPos = pos;
 	gl_Position = proj * view * vec4(pos, 1);
     float distToCam = distance(pos, viewPos);
     float pointScale = 1 - (distToCam / 1000);
     pointScale = clamp(pointScale, 0.1, 0.7);
 	eyeSpacePos = vec3(view * vec4(pos, 1));
-	gl_Position = proj * view * vec4(pos, 1);
 	gl_PointSize = (nearPlaneHeight * pointScale) / gl_Position.w;
 }

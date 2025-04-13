@@ -108,6 +108,7 @@ void Simulation::simulate() {
     simulationShader->setInt("poreSamples", hair->poreSamples);
     simulationShader->setFloat("gridCellSize", grid->cellSize);
     simulationShader->setInt("simulationTick", simulationTick);
+    simulationShader->setInt("clumpingRange", clumpingRange);
 
     // todo: check over this several times
 

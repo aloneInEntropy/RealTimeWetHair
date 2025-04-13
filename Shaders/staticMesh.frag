@@ -112,7 +112,7 @@ void main() {
 	float ndc = clipSpacePos.z / clipSpacePos.w;
 	gl_FragDepth = ndc *.5 + .5;
 	float outDepth = -pixelPos.z;
-	DepthColour = vec4(outDepth/150, 0, 0, 1);
+	DepthColour = vec4(vec3(outDepth/150), 1);
 }
 
 // calculates the color when using a directional light.

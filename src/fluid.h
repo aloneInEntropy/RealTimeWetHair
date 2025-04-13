@@ -180,16 +180,9 @@ class Fluid {
     // todo: either add fbo to all render stages, or create new stage with depth + env
     void createFramebuffers() {
         // create framebuffers
-        envFBO = new Framebuffer("environment", DIR("Shaders/quad.vert"), DIR("Shaders/quad.frag"), SM::width, SM::height);
-        envFBO->addTexture("env colour texture", GL_TEXTURE_2D, GL_RGBA32F, GL_COLOR_ATTACHMENT0);
-        envFBO->addTexture("env depth texture", GL_TEXTURE_2D, GL_RGBA32F, GL_COLOR_ATTACHMENT1);
-        envFBO->addRenderbuffer("env render buffer", GL_DEPTH_COMPONENT32, GL_DEPTH_ATTACHMENT);
-        envFBO->addDrawBuffers({GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1});
-
+        
         depthFBO = new Framebuffer("fluid depth", DIR("Shaders/quad.vert"), DIR("Shaders/quad.frag"), SM::width, SM::height);
         depthFBO->addTexture("depth colour texture", GL_TEXTURE_2D, GL_RGBA32F, GL_COLOR_ATTACHMENT0);
-        // depthFBO->addTexture("environment", envFBO->textures[0]->tex, GL_TEXTURE_2D);
-        // depthFBO->addTexture("environment dpth", envFBO->textures[1]->tex, GL_TEXTURE_2D);
         depthFBO->addRenderbuffer("depth render buffer", GL_DEPTH_COMPONENT32, GL_DEPTH_ATTACHMENT);
 
         thicknessFBO1 = new Framebuffer("fluid thickness", DIR("Shaders/quad.vert"), DIR("Shaders/quad.frag"),
@@ -198,16 +191,12 @@ class Fluid {
         thicknessFBO1->addRenderbuffer("depth render buffer", GL_DEPTH_COMPONENT32, GL_DEPTH_ATTACHMENT);
         thicknessFBO2 = new Framebuffer("fluid thickness", DIR("Shaders/quad.vert"), DIR("Shaders/quad.frag"), SM::width, SM::height);
         thicknessFBO2->addTexture("depth colour texture", GL_TEXTURE_2D, GL_RGBA32F, GL_COLOR_ATTACHMENT0);
-        // thicknessFBO2->addTexture("environment", envFBO->textures[0]->tex, GL_TEXTURE_2D);
-        // thicknessFBO2->addTexture("environment dpth", envFBO->textures[1]->tex, GL_TEXTURE_2D);
         thicknessFBO2->addRenderbuffer("depth render buffer", GL_DEPTH_COMPONENT32, GL_DEPTH_ATTACHMENT);
-
+        
         blurFBO = new Framebuffer("narrow-range", DIR("Shaders/quad.vert"), DIR("Shaders/sim/fluid/render/narrow_range_filter.frag"), SM::width, SM::height);
         blurFBO->addTexture("blur pass texture", GL_TEXTURE_2D, GL_RGBA32F, GL_COLOR_ATTACHMENT0);
-        // blurFBO->addTexture("environment", envFBO->textures[0]->tex, GL_TEXTURE_2D);
-        // blurFBO->addTexture("environment dpth", envFBO->textures[1]->tex, GL_TEXTURE_2D);
         blurFBO->addRenderbuffer("depth render buffer", GL_DEPTH_COMPONENT32, GL_DEPTH_ATTACHMENT);
-
+        
         tempBlur1FBO = new Framebuffer("temp narrow-range 1", DIR("Shaders/quad.vert"), DIR("Shaders/sim/fluid/render/narrow_range_filter.frag"), SM::width, SM::height);
         tempBlur1FBO->addTexture("temp blur pass texture 1", GL_TEXTURE_2D, GL_RGBA32F, GL_COLOR_ATTACHMENT0);
         tempBlur1FBO->addRenderbuffer("temp blur 1 render buffer", GL_DEPTH_COMPONENT32, GL_DEPTH_ATTACHMENT);
@@ -217,10 +206,14 @@ class Fluid {
 
         normalsFBO = new Framebuffer("smoothed normal", DIR("Shaders/quad.vert"), DIR("Shaders/sim/fluid/render/normal_pass.frag"), SM::width, SM::height);
         normalsFBO->addTexture("normal texture", GL_TEXTURE_2D, GL_RGBA32F, GL_COLOR_ATTACHMENT0);
-        // normalsFBO->addTexture("environment", envFBO->textures[0]->tex, GL_TEXTURE_2D);
-        // normalsFBO->addTexture("environment dpth", envFBO->textures[1]->tex, GL_TEXTURE_2D);
         normalsFBO->addRenderbuffer("normal render buffer", GL_DEPTH_COMPONENT32, GL_DEPTH_ATTACHMENT);
-
+        
+        envFBO = new Framebuffer("environment", DIR("Shaders/quad.vert"), DIR("Shaders/quad.frag"), SM::width, SM::height);
+        envFBO->addTexture("env colour texture", GL_TEXTURE_2D, GL_RGBA32F, GL_COLOR_ATTACHMENT0);
+        envFBO->addTexture("env depth texture", GL_TEXTURE_2D, GL_RGBA32F, GL_COLOR_ATTACHMENT1);
+        envFBO->addRenderbuffer("env render buffer", GL_DEPTH_COMPONENT32, GL_DEPTH_ATTACHMENT);
+        envFBO->addDrawBuffers({GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1});
+        
         compositionFBO = new Framebuffer("composition texture", DIR("Shaders/quad.vert"), DIR("Shaders/sim/fluid/render/composition_pass.frag"), SM::width, SM::height);
         compositionFBO->addTexture("composited blurred depth texture", blurFBO->textures[0]->tex, GL_TEXTURE_2D);
         compositionFBO->addTexture("composited normal texture", normalsFBO->textures[0]->tex, GL_TEXTURE_2D);
@@ -600,7 +593,7 @@ class Fluid {
     float f_cohesion = 80.f;
     float f_curvature = 1e-3f;
     float f_viscosity = 1.3f;
-    float f_adhesion = 250.f;
+    float f_adhesion = 750.f;
 
     /* Rendering */
     bool showOutline = true;

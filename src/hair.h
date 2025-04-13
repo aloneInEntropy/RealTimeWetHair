@@ -217,7 +217,7 @@ class Hair {
             Particle part = Particle(p, vec3(0), i == 0 ? 0 : 1, HAIR);
             particles.push_back(part);
             ps.push_back(vec4(p, 0));
-        };
+        }
 
         float l0 = distance(particles[vStart].x, particles[vStart + 1].x);
         /* Debug */
@@ -312,73 +312,6 @@ class Hair {
             rotationAxis.z * invs);
     }
 
-    void simulateGPU() {
-        // // dispatch compute shader kernels
-        // glBindVertexArray(VAO);
-        // bindKernels();
-        // sdt = dt / simulationSubsteps;
-        // simulationShader->use();
-        // simulationShader->setFloat("dt", sdt);
-        // simulationShader->setVec4("up", vec4(0, 1, 0, 0));
-        // simulationShader->setVec3("gravity", gravityDir);
-        // simulationShader->setVec4("torque", vec4(torque, 0));
-        // simulationShader->setMat3("inertia", inertia);
-        // simulationShader->setFloat("l_drag", drag);
-        // simulationShader->setFloat("a_drag", a_drag);
-        // simulationShader->setFloat("ss_k", ss_k);
-        // simulationShader->setFloat("bt_k", bt_k);
-        // simulationShader->setFloat("ss_SOR", ss_SOR);
-        // simulationShader->setFloat("bt_SOR", bt_SOR);
-        // simulationShader->setFloat("headRad", renderHeadRadius);
-        // mat3 htr = -mat3(headTrans);
-        // mat4 d;
-        // simulationShader->setMat4("headTrans", headTrans);
-        // for (int s = 0; s < simulationSubsteps; ++s) {
-        //     for (int stage = 0; stage < N_STAGES; ++stage) {
-        //         simulationShader->setInt("stage", stage);
-        //         if (stage == STRETCH_SHEAR_CONSTRAINT || stage == BEND_TWIST_CONSTRAINT) {
-        //             // use red-black gauss-seidel ordering
-        //             simulationShader->setInt("rbgs", 0);
-        //             glDispatchCompute(ceil((nTotalVertices / 2) / DISPATCH_SIZE) + 1, 1, 1);
-        //             glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-        //             simulationShader->setInt("rbgs", 1);
-        //             glDispatchCompute(ceil((nTotalVertices / 2) / DISPATCH_SIZE) + 1, 1, 1);
-        //             glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-        //         } else {
-        //             simulationShader->setInt("rbgs", -1);  // unused; kept as a guard
-        //             glDispatchCompute(ceil(nTotalVertices / DISPATCH_SIZE) + 1, 1, 1);
-        //             glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-        //         }
-        //     }
-        // }
-    }
-
-    // Simulate a single simulation step
-    void step() {
-        if (Input::isKeyJustPressed(Key::SPACE) && !SM::cfg.isCamMode) {
-            play = !play;
-        }
-        if (Input::isKeyJustPressed('Q') && !play) {
-            tick();
-        }
-        if (!play) return;
-
-        update();
-    }
-
-    // Tick the simulation forward by a single step and render the output immediately
-    void tick() {
-        update();
-        render();
-    }
-
-    // Update the simulation
-    void update() {
-        simulateGPU();
-        simulationTick++;
-    }
-
     // Render the simulation
     void render() {
         glBindVertexArray(VAO);
@@ -397,10 +330,10 @@ class Hair {
         shader->setVec4("guideColour", guideColour);
         shader->setFloat("particleRadius", particleRadius);
         shader->setFloat("nearPlaneHeight", heightOfNearPlane);
-        // if (showLines) {
-        //     shader->setVec4("colour", hairColour);
-        //     glMultiDrawArraysIndirect(GL_LINE_STRIP, 0, numStrands, 0);
-        // }
+        if (showLines) {
+            shader->setVec4("colour", hairColour);
+            glMultiDrawArraysIndirect(GL_LINE_STRIP, 0, numStrands, 0);
+        }
         if (showPoints) {
             shader->setVec4("colour", vec4(0.75, 0.3, 0.3, 1));
             glMultiDrawArraysIndirect(GL_POINTS, 0, numStrands, 0);
@@ -489,15 +422,15 @@ class Hair {
     /* Physics */
     float f_l_drag = 0.98f;  // vertex air resistance
     float f_a_drag = 0.6f;   // rod rotation resistance
-    float f_porosity = 1;
-    float f_clumping = -0.0002;
+    float f_porosity = .25;
+    float f_clumping = -0.0005;
 
     /* Hair */
     mat4 headTrans = translate(mat4(1), vec3(150, 6, 150));
     vec4 hairColour = vec4(42, 25, 5, 255) / 255.f;
     vec4 guideColour = vec4(105, 175, 55, 255) / 255.f;
     float sRad = 0.05;       // rod thickness
-    float rad = 1.f;         // strand coil radius
+    float rad = 2.f;         // strand coil radius
     float strandLength = 15;  // length of a strand
     int nCurls = 6;          // number of curls in a strand
     int poreSamples = 1;
