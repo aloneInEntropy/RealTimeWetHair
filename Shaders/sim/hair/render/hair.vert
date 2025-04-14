@@ -104,11 +104,18 @@ layout(std430, binding=14) readonly buffer RodToStrandMap {
     int rodStrandMap[];
 };
 
-layout(location = 0) out vec3 eyeSpacePos;
-layout(location = 1) flat out uint particleID;
-layout(location = 2) out vec3 tangent;
-layout(location = 3) out vec3 fragPos;
-layout(location = 4) out float vWeight;
+out VS_OUT {
+    flat uint particleID;
+    float vWeight;
+    vec3 tangent;
+    vec3 eyeSpacePos;
+    vec3 fragPos;
+} vs_out;
+// layout(location = 0) out vec3 eyeSpacePos;
+// layout(location = 1) flat out uint particleID;
+// layout(location = 2) out vec3 tangent;
+// layout(location = 3) out vec3 fragPos;
+// layout(location = 4) out float vWeight;
 
 layout(location = 0) uniform mat4 proj;
 layout(location = 1) uniform mat4 view;
@@ -151,29 +158,29 @@ void main() {
     d0s[0];
     vertexStrandMap[0];
     rodStrandMap[0];
-    particleID = gl_VertexID;
-    if (particleID == hairStrands[vertexStrandMap[particleID]].endVertexIdx) tangent = vec3(0,1,0);
+    vs_out.particleID = gl_VertexID;
+    if (gl_VertexID == hairStrands[vertexStrandMap[gl_VertexID]].endVertexIdx) vs_out.tangent = vec3(0,1,0);
     else {
         vec3 UP = vec3(0, 1, 0);
         // vec3 n = /* mat3(headTrans) *  */toMat3(rods[gl_VertexID - vertexStrandMap[gl_VertexID]].q) * UP; // 
-        vec3 dir = normalize(rods[particleID - vertexStrandMap[particleID]].q.xyz);
-        vec3 right = normalize(cross(dir, UP));
-        vec3 n = normalize(cross(right, dir));
+        vec3 dir = normalize(rods[gl_VertexID - vertexStrandMap[gl_VertexID]].q.xyz);
+        // vec3 right = normalize(cross(dir, UP));
+        // vec3 n = normalize(cross(right, dir));
         // vs_out.n = normalize(rods[gl_VertexID - vertexStrandMap[gl_VertexID]].q.xyz);
-        tangent = dir;
+        vs_out.tangent = dir;
     }
-    int strandCountI = hairStrands[vertexStrandMap[particleID]].nVertices;
-    int strandStartI = hairStrands[vertexStrandMap[particleID]].startVertexIdx;
-    vWeight = (particleID - strandStartI + 1.f) / float(strandCountI);
+    int strandCountI = hairStrands[vertexStrandMap[gl_VertexID]].nVertices;
+    int strandStartI = hairStrands[vertexStrandMap[gl_VertexID]].startVertexIdx;
+    vs_out.vWeight = (gl_VertexID - strandStartI + 1.f) / float(strandCountI);
     // particleID = gl_InstanceID + gl_VertexID;
     // particleID = gl_BaseInstance + gl_VertexID;
     // particleID = gl_BaseVertex + gl_VertexID;
-	vec3 pos = particles[particleID].x.xyz;
-    fragPos = pos;
-	gl_Position = proj * view * vec4(pos, 1);
-    float distToCam = distance(pos, viewPos);
-    float pointScale = 1 - (distToCam / 1000);
-    pointScale = clamp(pointScale, 0.1, 0.7);
-	eyeSpacePos = vec3(view * vec4(pos, 1));
-	gl_PointSize = (nearPlaneHeight * pointScale) / gl_Position.w;
+	vec3 pos = particles[gl_VertexID].x.xyz;
+    vs_out.fragPos = pos;
+	gl_Position = vec4(pos, 1);
+    // float distToCam = distance(pos, viewPos);
+    // float pointScale = 1 - (distToCam / 1000);
+    // pointScale = clamp(pointScale, 0.1, 0.7);
+	vs_out.eyeSpacePos = vec3(view * vec4(pos, 1));
+	// gl_PointSize = (nearPlaneHeight * pointScale) / gl_Position.w;
 }

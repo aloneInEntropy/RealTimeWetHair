@@ -16,15 +16,16 @@ void init() {
     startLight = new Lighting("start light", startShader, MATERIAL_SHINY);
     renderHead = new StaticMesh("Render Head", MESH_HEAD);
     guideHead = new StaticMesh("Guide Head", MESH_GUIDE_HEAD);
+    largeHead = new StaticMesh("Root Head", MESH_LARGE_HEAD);
 
     HairConfigs hs;
     /* Generate hairs */
     int rndCnt = 0;
-    for (int i = 0; i < renderHead->vertexData.size(); ++i) {
+    for (int i = 0; i < largeHead->vertexData.size(); ++i) {
         // if (rndCnt >= 512) break;
-        if (renderHead->vertexData[i].pos.y >= 0) {
+        if (largeHead->vertexData[i].pos.y >= 0) {
             // only normals facing out/up
-            hs.push_back({50, vec4(renderHead->vertexData[i].pos, 1), renderHead->vertexData[i].norm});
+            hs.push_back({10, vec4(largeHead->vertexData[i].pos, 1), largeHead->vertexData[i].norm});
             rndCnt++;
         }
     }

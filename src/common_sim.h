@@ -4,7 +4,7 @@
 #include "sm.h"
 #include "util.h"
 
-#define DISPATCH_SIZE 8  // intel i7-1260p
+#define DISPATCH_SIZE 1024  // intel i7-1260p
 
 class SpatialGrid;
 
@@ -70,7 +70,14 @@ struct IndirectArrayDrawCommand {
     unsigned int baseVertex;
     unsigned int baseInstance;
 };
-
+// Indirect drawing command for `glMultiDrawElementsIndirect`
+struct IndirectElementDrawCommand {
+    unsigned int indexCount;
+    unsigned int instanceCount;
+    unsigned int baseIndex;
+    unsigned int baseVertex;
+    unsigned int baseInstance;
+};
 // List of `Particle` structs.
 // All simulations will use this buffer and an offset to determine the computation the particles will be used for
 extern std::vector<Particle> particles;

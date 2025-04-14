@@ -88,8 +88,8 @@ class Hair {
                             {
                                 {DIR("Shaders/sim/hair/render/hair.vert"), GL_VERTEX_SHADER},
                                 {DIR("Shaders/sim/hair/render/hair.frag"), GL_FRAGMENT_SHADER},
-                                // {DIR("Shaders/hair/hair.tesc"), GL_TESS_CONTROL_SHADER},
-                                // {DIR("Shaders/hair/hair.tese"), GL_TESS_EVALUATION_SHADER},
+                                {DIR("Shaders/sim/hair/render/hair.tesc"), GL_TESS_CONTROL_SHADER},
+                                {DIR("Shaders/sim/hair/render/hair.tese"), GL_TESS_EVALUATION_SHADER},
                             });
         // simulationShader = new Shader("hair compute", DIR("Shaders/hair/simulate.comp"), GL_COMPUTE_SHADER);
 
@@ -113,8 +113,10 @@ class Hair {
             for (int j = 0; j < nR; ++j) {
                 rodStrandMap.push_back(i);
             }
+            int prevIndexCount = indices.size();
             initialiseVertices(i, rotMat);
             initialiseQuaternions(i, rotMat);
+            indexCounts.push_back(indices.size() - prevIndexCount);
         }
         nTotalVertices = vStart;
         nTotalRods = rStart;
@@ -133,6 +135,7 @@ class Hair {
         glDeleteBuffers(1, &vertexStrandMapBuffer);
         glDeleteBuffers(1, &rodStrandMapBuffer);
         glDeleteBuffers(1, &commandBuffer);
+        // glDeleteBuffers(1, &commandBufferA);
         glDeleteBuffers(1, &VAO);
     }
 
@@ -142,6 +145,9 @@ class Hair {
             buffersSet = false;
         }
         glCreateVertexArrays(1, &VAO);
+        glCreateBuffers(1, &EBO);
+        glNamedBufferStorage(EBO, sizeof(indices[0]) * indices.size(), &indices[0], GL_MAP_READ_BIT);
+        glVertexArrayElementBuffer(VAO, EBO);
         auto bf = GL_MAP_WRITE_BIT | GL_MAP_READ_BIT | GL_DYNAMIC_STORAGE_BIT;
 
         glCreateBuffers(1, &rodBuffer);
@@ -166,23 +172,36 @@ class Hair {
         glNamedBufferStorage(poreDataBuffer, sizeof(PoreData) * poreData.size(), poreData.data(), bf);
 
         // load command buffer
-        IndirectArrayDrawCommand* cmds = new IndirectArrayDrawCommand[numStrands];
-        unsigned int baseInstance = 0;
+        // IndirectArrayDrawCommand* cmdsA = new IndirectArrayDrawCommand[numStrands];
+        // unsigned int baseInstance = 0;
+        // for (int i = 0; i < numStrands; ++i) {
+        //     const auto& s = hairStrands[i];
+        //     int vCount = s.nVertices;  // vertices in this strand
+
+        //     cmdsA[i].vertexCount = vCount;
+        //     cmdsA[i].instanceCount = 1;  // 1 strand instance
+        //     cmdsA[i].baseVertex = s.startVertexIdx;
+        //     cmdsA[i].baseInstance = baseInstance;
+
+        //     baseInstance++;
+        // }
+        // // send command buffers to gpu
+        // glCreateBuffers(1, &commandBufferA);
+        // glNamedBufferStorage(commandBufferA, sizeof(IndirectArrayDrawCommand) * numStrands, &cmdsA[0], bf);
+
+        // load command buffer
+        IndirectElementDrawCommand* cmds = new IndirectElementDrawCommand[numStrands];
         for (int i = 0; i < numStrands; ++i) {
             const auto& s = hairStrands[i];
-            int vCount = s.nVertices;  // vertices in this strand
-
-            cmds[i].vertexCount = vCount;
+            cmds[i].indexCount = indexCounts[i];
             cmds[i].instanceCount = 1;  // 1 strand instance
+            cmds[i].baseIndex = 0;
             cmds[i].baseVertex = s.startVertexIdx;
-            cmds[i].baseInstance = baseInstance;
-
-            baseInstance++;
+            cmds[i].baseInstance = i;
         }
-
         // send command buffers to gpu
         glCreateBuffers(1, &commandBuffer);
-        glNamedBufferStorage(commandBuffer, sizeof(IndirectArrayDrawCommand) * numStrands, &cmds[0], bf);
+        glNamedBufferStorage(commandBuffer, sizeof(IndirectElementDrawCommand) * numStrands, &cmds[0], bf);
 
         buffersSet = true;
     }
@@ -217,6 +236,16 @@ class Hair {
             Particle part = Particle(p, vec3(0), i == 0 ? 0 : 1, HAIR);
             particles.push_back(part);
             ps.push_back(vec4(p, 0));
+
+            /* Add vertex indices */
+            if (i <= 3) {
+                indices.push_back(i);
+            } else {
+                indices.push_back(i - 3);
+                indices.push_back(i - 2);
+                indices.push_back(i - 1);
+                indices.push_back(i);
+            }
         }
 
         float l0 = distance(particles[vStart].x, particles[vStart + 1].x);
@@ -330,14 +359,17 @@ class Hair {
         shader->setVec4("guideColour", guideColour);
         shader->setFloat("particleRadius", particleRadius);
         shader->setFloat("nearPlaneHeight", heightOfNearPlane);
-        if (showLines) {
-            shader->setVec4("colour", hairColour);
-            glMultiDrawArraysIndirect(GL_LINE_STRIP, 0, numStrands, 0);
-        }
-        if (showPoints) {
-            shader->setVec4("colour", vec4(0.75, 0.3, 0.3, 1));
-            glMultiDrawArraysIndirect(GL_POINTS, 0, numStrands, 0);
-        }
+        shader->setVec4("colour", hairColour);
+        glPatchParameteri(GL_PATCH_VERTICES, 4);
+        // glMultiDrawArraysIndirect(GL_PATCHES, 0, numStrands, 0);
+        glMultiDrawElementsIndirect(GL_PATCHES, GL_UNSIGNED_INT, 0, numStrands, 0);
+        // if (showLines) {
+        //     glMultiDrawArraysIndirect(GL_LINE_STRIP, 0, numStrands, 0);
+        // }
+        // if (showPoints) {
+        //     shader->setVec4("colour", vec4(0.75, 0.3, 0.3, 1));
+        //     glMultiDrawArraysIndirect(GL_POINTS, 0, numStrands, 0);
+        // }
         glBindVertexArray(0);
     }
 
@@ -391,18 +423,21 @@ class Hair {
 
     /* Vertices */
     int nTotalVertices;  // number of vertices
-
+    std::vector<int> indices;      // indices for each vertex
+    std::vector<int> indexCounts;  // index counts for each strand
+    
     /* Pores */
     std::vector<PoreData> poreData;
-
+    
     /* Rods */
     std::vector<Rod> rods;
     std::vector<quat> us;   // predicted rod orientations
     std::vector<vec4> d0s;  // rest darboux vectors
     int nTotalRods;         // number of quaternions/rods
-
-    /* --- Render buffers --- */
+    
+    /* --- Rendering buffers --- */
     unsigned VAO = 0;
+    unsigned EBO = 0;
     unsigned rodBuffer = 0;  // holds Rod struct
     unsigned predictedRotationBuffer = 0;
     unsigned restDarbouxBuffer = 0;
@@ -410,6 +445,7 @@ class Hair {
     unsigned rodStrandMapBuffer = 0;
     unsigned hairStrandBuffer = 0;
     unsigned poreDataBuffer = 0;
+    // unsigned commandBufferA = 0;
     unsigned commandBuffer = 0;
     bool buffersSet = false;
 
@@ -430,9 +466,9 @@ class Hair {
     vec4 hairColour = vec4(42, 25, 5, 255) / 255.f;
     vec4 guideColour = vec4(105, 175, 55, 255) / 255.f;
     float sRad = 0.05;       // rod thickness
-    float rad = 2.f;         // strand coil radius
-    float strandLength = 15;  // length of a strand
-    int nCurls = 6;          // number of curls in a strand
+    float rad = .5f;         // strand coil radius
+    float strandLength = 8;  // length of a strand
+    int nCurls = 3;          // number of curls in a strand
     int poreSamples = 1;
 
     /* ----- Settings ----- */

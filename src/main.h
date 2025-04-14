@@ -42,11 +42,12 @@ const char* frag_smesh = PROJDIR "Shaders/staticMesh.frag";
 #define MESH_MONKEY "monkey.gltf"
 #define MESH_HEAD "bighead.gltf"
 #define MESH_GUIDE_HEAD "guidehead.gltf"
+#define MESH_LARGE_HEAD "largehead.gltf"
 
 /* Variables */
 Shader *startShader;
 Lighting* startLight;
-StaticMesh* renderHead, *guideHead;
+StaticMesh* renderHead, *guideHead, *largeHead;
 bool showHead = true;
 bool showFluid = true;
 bool showMonkeys = false;

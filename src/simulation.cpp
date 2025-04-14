@@ -110,8 +110,6 @@ void Simulation::simulate() {
     simulationShader->setInt("simulationTick", simulationTick);
     simulationShader->setInt("clumpingRange", clumpingRange);
 
-    // todo: check over this several times
-
     for (int i = 0; i < simulationSubsteps; ++i) {
         for (int stage = 0; stage < N_SIM_STAGES; ++stage) {
             simulationShader->setInt("stage", stage);
@@ -138,7 +136,7 @@ void Simulation::simulate() {
                     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
                     break;
                 case COMPUTE_FLUID_AUX:
-                    glDispatchCompute(ceil(fluidParticleCount / DISPATCH_SIZE) + 1, 1, 1);  // ! segfault?
+                    glDispatchCompute(ceil(fluidParticleCount / DISPATCH_SIZE) + 1, 1, 1);
                     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
                     break;
                 case PREDICT:
@@ -198,14 +196,7 @@ void Simulation::update() {
         if ((ticking && simulationTick < nextTick) || !ticking) {
             simulate();
         }
-    } else {
-        // if (Input::isKeyJustPressed('Q')) {
-        //     tick();
-        // }
     }
 }
-
-// void Simulation::tick() {
-// }
 
 }  // namespace Sim
