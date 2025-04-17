@@ -3,7 +3,7 @@
 layout(location = 0) out vec4 FragColour;
 
 layout(location = 0) in vec3 eyeSpacePos;
-layout(location = 1) flat in int instanceID;
+layout(location = 1) flat in int globalParticleID;
 
 layout(location = 0) uniform mat4 proj;
 layout(location = 5) uniform float particleRadius;

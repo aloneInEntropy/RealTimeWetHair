@@ -11,7 +11,7 @@ layout (local_size_x = LOCAL_SIZE) in;
 // // todo: better clumping effects
 // // todo: hair-hair collisions
 // todo: separate bounds for fluid only
-// todo: fluid mass diffusion.
+// // todo: fluid mass diffusion.
 // // todo: calculate and store wetness in hair particle; reuse padding variable
 // todo: scale bt_k inversely by wetness
 // todo: scale fluid particle alpha based on proximity to porous particles (or adhesion) http://nishitalab.org/user/witawat/resources/papers/wetHair_pg2012.pdf 
@@ -270,6 +270,7 @@ const float off_K = 0.2; // [Lin14]
 const mat3 K = mat3(perm_K, off_K,off_K, off_K,perm_K,off_K, off_K,off_K,perm_K); // [LAD08]
 const float collisionResolutionSpeed = 10;
 const float maxSpeed = 50;
+const float fluidMassDiffusionFactor = .01;
 
 /* ========================================================================================================================================================= */
 /* ========================================================================================================================================================= */
@@ -308,7 +309,7 @@ void applyExternalForces(int i_hf) {
         rods[j_h].v += vec4(inverse(inertia) * (fv_torque - cross(rods[j_h].v.xyz, inertia * rods[j_h].v.xyz)) * dt, 0);
     } else if (particles[i_hf].t == FLUID) {
         // fluid gravity
-        particles[i_hf].v += vec4(fv_gravity * dt, 0);
+        particles[i_hf].v += vec4(fv_gravity * particles[i_hf].d * dt, 0);
     }
 
     particles[i_hf].v = vec4(clampAndReset(particles[i_hf].v.xyz, vec3(-maxSpeed), vec3(maxSpeed), 0), 0);
@@ -575,6 +576,7 @@ void computeFluidAuxillaries(int i_f) {
     int maxY = max(1, cell.y + 1);
     int minZ = max(cell.z - 1, 0);
     int maxZ = max(1, cell.z + 1);
+    bool nearPore = false;
     for (int x = minX; x <= maxX; ++x) {
         for (int y = minY; y <= maxY; ++y) {
             for (int z = minZ; z <= maxZ; ++z) {
@@ -584,6 +586,7 @@ void computeFluidAuxillaries(int i_f) {
                 int end = startIndices[key].startIndex + startIndices[key].particlesInBucket;
                 for (int s = start; s < end; ++s) {
                     int j_g = cellEntries[s];
+                    if (particles[j_g].t == PORE) { nearPore = true; continue; }
                     if (particles[j_g].t != FLUID) continue;
 
                     int j_f = gToF(j_g);
@@ -602,6 +605,11 @@ void computeFluidAuxillaries(int i_f) {
     curvatureNormals[i_f] = vec4(cNorm * smoothingRadius, 0);
     lambdas[i_f] = -numer / (denom + relaxationEpsilon + 1e-6f);
     omegas[i_f] = vec4(omega, 0);
+    if (nearPore) {
+        particles[i_g].d += fluidMassDiffusionFactor * fluidDensities[i_f];
+    } else {
+        particles[i_g].d = 1;
+    }
 }
 
 // [KS16], Eq. 37
@@ -829,7 +837,7 @@ void predict(int i_g) {
         }
 
         // todo: decrease wetness over time in line with diffusion
-        particles[i_g].d = max(0, particles[i_g].d - 0.001); // reset wetness
+        particles[i_g].d = max(0, particles[i_g].d - 0.1); // reset wetness
     } else if (particles[i_g].t == FLUID) {
         ps[i_g] = particles[i_g].x + particles[i_g].v * dt;
         vec3 halfBounds = (bounds - vec3(particleRadius)) / 2.f;

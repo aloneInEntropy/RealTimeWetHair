@@ -29,10 +29,6 @@ layout(std430, binding = 0) buffer Particles {
 // https://mmmovania.blogspot.com/2011/01/point-sprites-as-spheres-in-opengl33.html
 void main() {
     float op = 1;
-    if (particles[instanceID].t == 3) {
-        if (!showBounds) { discard; }
-        else op = 0.1;
-    }
 
 	// calculate normal from texture coordinates
     vec3 N;

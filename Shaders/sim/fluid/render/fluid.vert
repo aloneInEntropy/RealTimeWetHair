@@ -14,7 +14,7 @@ layout(std430, binding = 0) buffer Particles {
 };
 
 layout(location = 0) out vec3 eyeSpacePos;
-layout(location = 1) flat out int instanceID;
+layout(location = 1) flat out int globalParticleID;
 
 layout(location = 0) uniform mat4 proj;
 layout(location = 1) uniform mat4 view;
@@ -23,8 +23,8 @@ layout(location = 3) uniform float nearPlaneHeight;
 layout(location = 4) uniform int startIdx;
 
 void main() {
-    instanceID = startIdx + gl_InstanceID;
-    vec3 pos = particles[instanceID].x.xyz;
+    globalParticleID = startIdx + gl_InstanceID;
+    vec3 pos = particles[globalParticleID].x.xyz;
     float distToCam = distance(pos, viewPos);
     float pointScale = 1 - (distToCam / 1000);
     pointScale = clamp(pointScale, 0.1, 0.7);

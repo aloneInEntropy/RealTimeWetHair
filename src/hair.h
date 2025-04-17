@@ -467,8 +467,8 @@ class Hair {
     float fresnelExponent = 5;
     float sRad = 0.05;       // rod thickness
     float rad = .5f;         // strand coil radius
-    float strandLength = 5;  // length of a strand
-    int nCurls = 3;          // number of curls in a strand
+    float strandLength = 10;  // length of a strand
+    int nCurls = 4;          // number of curls in a strand
     int poreSamples = 1;
 
     /* ----- Settings ----- */

@@ -50,8 +50,8 @@ float GGX_G(vec3 normal, vec3 viewDir, vec3 lightDir, float roughness);
 vec3 fresnel(float cos_theta, vec3 F0);
 
 // // todo: darken based on hair vertex "wetness"; reuse a padding value
-// todo: scale specular highlight and colour by wetness
-// todo: can't change colour back once wet???
+// // todo: scale specular highlight and colour by wetness
+// // todo: can't change colour back once wet???
 // pbr: 
 // https://graphicscompendium.com/gamedev/15-pbr
 // https://typhomnt.github.io/teaching/ray_tracing/pbr_intro/
@@ -78,11 +78,11 @@ void main() {
 	vec3 viewDir = normalize(viewPos - es.fragPos);
 
 	// directional lights
-	vec3 result = CalcDirLight(vec3(-1, -1, 0), norm, viewDir);
+	vec3 result = pbrMaterial.albedo * 0.2 + CalcDirLight(vec3(-1, -1, 0), norm, viewDir);
 
 	vec3 ev = normalize(es.fragPos - viewPos);
 	float ff = abs(dot(ev, norm));
-	result += fresnel(ff, vec3(0.005)) * es.vWeight * (outDepth/150) * 0.5;
+	result += fresnel(ff, vec3(0.05)) * es.vWeight * (outDepth/150) * 0.5;
 	/* gamma correction */
 	// result /= (result + vec3(1));
 	// result = pow(result, vec3(1/2.2));
@@ -97,9 +97,9 @@ void main() {
 vec3 CalcDirLight(vec3 lightDir, vec3 N, vec3 V) {
 	vec3 L = normalize(-lightDir);
 	vec3 H = normalize(L + V);
-	vec3 radiance = pbrMaterial.albedo * clamp(wetnessSub, 0.4, 1);
-	float mtl = clamp(pbrMaterial.metalness + wetness, 0, 1);
-	float rgh = clamp(pbrMaterial.roughness - wetness, 0, 1);
+	vec3 radiance = pbrMaterial.albedo * clamp(wetnessSub, 0, 1);
+	float mtl = clamp(pbrMaterial.metalness + 0, 0, 1);
+	float rgh = clamp(pbrMaterial.roughness - 0, 0, 1);
 
 	float NoL = max(dot(N, L), 0);
 	vec3 F0 = vec3(0.5);
@@ -146,7 +146,7 @@ float GGX_G(vec3 normal, vec3 viewDir, vec3 lightDir, float roughness) {
 
 // fresnel equation (Schlick's approximation)
 vec3 fresnel(float cos_theta, vec3 F0) {
-	return F0 + (1-F0) * pow(clamp(1 - cos_theta, 0, 1), fresnelPower * wetness * 10);
+	return F0 + (1-F0) * pow(clamp(1 - cos_theta, 0, 1), fresnelPower * wetnessSub);
 }
 
 float chi(float x) {
