@@ -135,35 +135,35 @@ void displayUI() {
                 ImGui::DragFloat("SS SOR", &sim->hair->ss_SOR, .0001, 0.01, 10);
                 UI::Help(
                     "[UPP14]\n"
-                    "Successive over-relaxation value for the Stretch and Shear constraint.\n");
+                    "Successive over-relaxation value for the POCR Stretch and Shear constraint.\n");
                 ImGui::NewLine();
                 ImGui::DragFloat("BT Stiffness", &sim->hair->bt_k, .0001, 0.01, 1);
                 ImGui::DragFloat("BT SOR", &sim->hair->bt_SOR, .0001, 0.01, 10);
                 UI::Help(
                     "[UPP14]\n"
-                    "Successive over-relaxation value for the Bend and Twist constraint.\n");
+                    "Successive over-relaxation value for the POCR Bend and Twist constraint.\n");
                 ImGui::DragFloat("DN SOR", &sim->fluid->SOR, 0.01f, 0.01, 10);
                 UI::Help(
                     "[UPP14]\n"
                     "Successive over-relaxation value for the PBF Density constraint.\n");
                 ImGui::DragInt("Substeps", &CommonSim::simulationSubsteps, .1, 1, 20);
                 ImGui::DragInt("Iterations", &CommonSim::simulationIterations, .1, 1, 20);
-                if (ImGui::Button("Print Physics Settings")) {
-                    sim->printPhysicsSettings();
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("Print Hair Settings")) {
-                    sim->printHairSettings();
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("Print Simulation Settings")) {
-                    sim->printSimulationSettings();
-                }
-                if (ImGui::Button("Print All Settings")) {
-                    sim->printPhysicsSettings();
-                    // sim->hair->printHairSettings();
-                    sim->printSimulationSettings();
-                }
+                // if (ImGui::Button("Print Physics Settings")) {
+                //     sim->printPhysicsSettings();
+                // }
+                // ImGui::SameLine();
+                // if (ImGui::Button("Print Hair Settings")) {
+                //     sim->printHairSettings();
+                // }
+                // ImGui::SameLine();
+                // if (ImGui::Button("Print Simulation Settings")) {
+                //     sim->printSimulationSettings();
+                // }
+                // if (ImGui::Button("Print All Settings")) {
+                //     sim->printPhysicsSettings();
+                //     // sim->hair->printHairSettings();
+                //     sim->printSimulationSettings();
+                // }
                 ImGui::TreePop();
             }
 
@@ -186,8 +186,8 @@ void displayUI() {
             }
 
             ImGui::Checkbox("Play", &CommonSim::play);
-            ImGui::Text("Tick: %d%s", CommonSim::simulationTick, CommonSim::simulationTick >= CommonSim::nextTick ? " (target reached)" : "");
-
+            ImGui::Text("Tick: %d%s", CommonSim::simulationTick, 
+                (CommonSim::ticking &&  CommonSim::simulationTick >= CommonSim::nextTick) ? " (target reached)" : "");
             ImGui::TreePop();
         }
         ImGui::DragFloat3("Gravity", &CommonSim::fv_gravity.x, 0.1f, -200, 200);
@@ -198,21 +198,18 @@ void displayUI() {
                 ImGui::DragFloat("Angular Drag", &sim->hair->f_a_drag, 0.001f, 0, 1);
                 ImGui::DragFloat("Clumping", &sim->hair->f_clumping, 0.001f, -100, 100);
                 ImGui::DragFloat("Porosity", &sim->hair->f_porosity, 0.001f, -100, 100);
-                ImGui::NewLine();
+                ImGui::InputInt("Clumping Range", &sim->hair->clumpingRange);
                 ImGui::TreePop();
             }
-            if (ImGui::TreeNodeEx("Hair", ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth)) {
+            if (ImGui::TreeNodeEx("Rendering##Hair", ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth)) {
+                ImGui::Checkbox("Show Head", &showHead);
                 ImGui::DragFloat3("Head Position", &headStartPos.x, .1, -100, 300);
                 ImGui::DragFloat3("Head Rotation", &headStartRot.x, .1, -1e9, 1e9);
                 headStartRot = Util::wrapV(headStartRot, vec3(0), vec3(360));
                 ImGui::ColorEdit4("Hair Colour", &sim->hair->hairColour.x);
-                ImGui::ColorEdit4("Guide Colour", &sim->hair->guideColour.x);
-                ImGui::Checkbox("Show Head", &showHead);
-                ImGui::SameLine();
-                ImGui::Checkbox("Show Hair", &sim->hair->showLines);
-                ImGui::SameLine();
-                ImGui::Checkbox("Show Points", &sim->hair->showPoints);
-                ImGui::InputInt("Clumping Range", &CommonSim::clumpingRange);
+                ImGui::DragFloat("Metalness", &sim->hair->metalness, 0.01, 0, 1);
+                ImGui::DragFloat("Roughness", &sim->hair->roughness, 0.01, 0, 1);
+                ImGui::DragFloat("Fresnel Exponent", &sim->hair->fresnelExponent, 0.01, 0, 10);
                 ImGui::TreePop();
             }
         }
@@ -228,7 +225,7 @@ void displayUI() {
                 ImGui::TreePop();
             }
 
-            if (ImGui::TreeNodeEx("Rendering", ImGuiTreeNodeFlags_SpanAvailWidth)) {
+            if (ImGui::TreeNodeEx("Rendering##Fluid", ImGuiTreeNodeFlags_SpanAvailWidth)) {
                 ImGui::Checkbox("Show Fluid", &showFluid);
                 ImGui::ColorEdit3("Fluid Colour", &sim->fluid->waterColour.x);
                 ImGui::ColorEdit3("Attenuation Colour", &sim->fluid->attenuationColour.x);

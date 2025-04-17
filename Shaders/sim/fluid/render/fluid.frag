@@ -17,7 +17,9 @@ struct Particle {
     vec4 x;  // particle position
     vec4 v;  // particle velocity
     float w; // particle inverse mass
-    int t;   // particle type. one of HAIR, SOLID, or FLUID
+    int t;   // particle type. one of HAIR, PORE, SOLID, or FLUID
+    float d; // particle wetness for HAIR particles. undefined for any non-HAIR particles
+    int pd;  // padding
 };
 
 layout(std430, binding = 0) buffer Particles {

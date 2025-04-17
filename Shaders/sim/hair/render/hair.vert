@@ -4,8 +4,9 @@ struct Particle {
     vec4 x;  // particle position
     vec4 v;  // particle velocity
     float w; // particle inverse mass
-    int t;   // particle type. one of HAIR, SOLID, or FLUID
-    int pd1, pd2;
+    int t;   // particle type. one of HAIR, PORE, SOLID, or FLUID
+    float d; // particle wetness for HAIR particles. undefined for any non-HAIR particles
+    int pd;  // padding
 };
 
 struct PoreData {
@@ -159,15 +160,12 @@ void main() {
     vertexStrandMap[0];
     rodStrandMap[0];
     vs_out.particleID = gl_VertexID;
-    if (gl_VertexID == hairStrands[vertexStrandMap[gl_VertexID]].endVertexIdx) vs_out.tangent = vec3(0,1,0);
-    else {
-        vec3 UP = vec3(0, 1, 0);
-        // vec3 n = /* mat3(headTrans) *  */toMat3(rods[gl_VertexID - vertexStrandMap[gl_VertexID]].q) * UP; // 
-        vec3 dir = normalize(rods[gl_VertexID - vertexStrandMap[gl_VertexID]].q.xyz);
-        // vec3 right = normalize(cross(dir, UP));
-        // vec3 n = normalize(cross(right, dir));
-        // vs_out.n = normalize(rods[gl_VertexID - vertexStrandMap[gl_VertexID]].q.xyz);
-        vs_out.tangent = dir;
+    vec3 up = vec3(0, 1, 0);
+    if (gl_VertexID == hairStrands[vertexStrandMap[gl_VertexID]].endVertexIdx) {
+        // copy previous tangent
+        vs_out.tangent = normalize(rods[(gl_VertexID - 1) - vertexStrandMap[(gl_VertexID - 1)]].q.xyz);
+    } else {
+        vs_out.tangent = normalize(rods[gl_VertexID - vertexStrandMap[gl_VertexID]].q.xyz);
     }
     int strandCountI = hairStrands[vertexStrandMap[gl_VertexID]].nVertices;
     int strandStartI = hairStrands[vertexStrandMap[gl_VertexID]].startVertexIdx;

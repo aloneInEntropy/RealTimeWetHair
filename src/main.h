@@ -43,6 +43,7 @@ const char* frag_smesh = PROJDIR "Shaders/staticMesh.frag";
 #define MESH_HEAD "bighead.gltf"
 #define MESH_GUIDE_HEAD "guidehead.gltf"
 #define MESH_LARGE_HEAD "largehead.gltf"
+#define MESH_PATCH "patch.gltf"
 
 /* Variables */
 Shader *startShader;

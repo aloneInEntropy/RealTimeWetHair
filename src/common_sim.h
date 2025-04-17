@@ -55,12 +55,14 @@ struct Particle {
         v = vec4(vel, 0);
         w = mass;
         t = phase;
+        d = 0;
     }
     vec4 x;   // particle position
     vec4 v;   // particle velocity
     float w;  // particle inverse mass
     Phase t;  // particle type. one of HAIR, SOLID, or FLUID
-    int pd1, pd2;
+    float d;  // particle wetness for HAIR particles. undefined for any non-HAIR particles
+    int pd;   // padding
 };
 
 // Indirect drawing command for `glMultiDrawArraysIndirect`
@@ -111,7 +113,6 @@ extern int fluidParticleCount;
 extern int porousParticleStartIdx;
 extern int porousParticleCount;
 extern int totalParticleCount;
-extern int clumpingRange;
 extern vec3 centre;
 extern vec3 bounds;
 extern vec3 fv_gravity;

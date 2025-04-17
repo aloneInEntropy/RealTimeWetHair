@@ -12,8 +12,9 @@ layout (local_size_x = LOCAL_SIZE) in;
 // // todo: hair-hair collisions
 // todo: separate bounds for fluid only
 // todo: fluid mass diffusion.
-// todo: calculate and store wetness in hair particle; reuse padding variable
+// // todo: calculate and store wetness in hair particle; reuse padding variable
 // todo: scale bt_k inversely by wetness
+// todo: scale fluid particle alpha based on proximity to porous particles (or adhesion) http://nishitalab.org/user/witawat/resources/papers/wetHair_pg2012.pdf 
 /* ==================================================================== Enums ==================================================================== */
 /* Simulation stages */
 #define APPLY_EXTERNAL_FORCES 0
@@ -44,7 +45,8 @@ struct Particle {
     vec4 v;  // particle velocity
     float w; // particle inverse mass
     int t;   // particle type. one of HAIR, PORE, SOLID, or FLUID
-    int pd1, pd2; // padding
+    float d; // particle wetness for HAIR particles. undefined for any non-HAIR particles
+    int pd; // padding
 };
 
 struct PoreData {
@@ -194,8 +196,10 @@ float poly6Kernel(vec3 r, float h);
 vec3 poly6KernelGrad(vec3 r, float h);
 float spikyKernel(vec3 r, float h);
 vec3 spikyKernelGrad(vec3 r, float h);
-vec3 AI12STKernelNorm(vec3 r, float h);
-vec3 AI12AdhesionKernelNorm(vec3 r, float h);
+float viscosityKernel(vec3 r, float h);
+vec3 AAI12TKernelNorm(vec3 r, float h);
+vec3 AAI12AdhesionKernelNorm(vec3 r, float h);
+vec3 ClumpingKernelNorm(vec3 r, float h, float rad);
 
 /* ==================================================================== Functions ==================================================================== */
 /* Defined in helper.comp */
@@ -261,10 +265,10 @@ vec3 clampAndReset(vec3 v, vec3 lo, vec3 hi, float new_value) {
 }
 
 /* ==================================================================== Constants ==================================================================== */
-const float perm_K = 1e-11; // [Lin15]
-const float off_K = 0.2; // [Lin15]
+const float perm_K = 1e-11; // [Lin14]
+const float off_K = 0.2; // [Lin14]
 const mat3 K = mat3(perm_K, off_K,off_K, off_K,perm_K,off_K, off_K,off_K,perm_K); // [LAD08]
-const float collisionResolutionSpeed = 100;
+const float collisionResolutionSpeed = 10;
 const float maxSpeed = 50;
 
 /* ========================================================================================================================================================= */
@@ -426,7 +430,9 @@ void computePorousVolume(int i_p) {
         }
     }
 
-    float vol = (isinf(1 / volume) || isnan(1 / volume)) ? 0 : 1 / volume;
+
+    float vol = 1 / volume;
+    if (isinf(vol) || isnan(vol)) vol = 0;
     // poreData[i_p].volume = max(max(vol, poreData[i_p].volume), 1.5);
     poreData[i_p].volume = vol;
 }
@@ -492,7 +498,7 @@ void computeViscosity(int i_f) {
                     if (particles[j_g].t == FLUID) {
                         /* [SB12], Eq. 2 */
                         int j_f = gToF(j_g);
-                        nV += vji * (1 / (particles[j_g].w * fluidDensities[j_f] + 1e-6)) * poly6Kernel(xij, smoothingRadius); // XSPH viscosity
+                        nV += vji * (1 / (particles[j_g].w * fluidDensities[j_f] + 1e-6)) * viscosityKernel(xij, smoothingRadius); // XSPH viscosity
                     } else if (particles[j_g].t == PORE) {
                         // todo
                         /* [AI12], Eq.11, 13-14 */
@@ -612,7 +618,7 @@ void stretchAndShearConstraint(int i_h) {
     float w_v1 = particles[i_g].w;
     float w_v2 = particles[i_g + 1].w;
 
-    vec3 e3 = up.xyz;
+    vec3 e3 = up;
     vec3 d3 = toMat3(us[j_h]) * e3;
     vec3 C = ((vec3(ps[i_g + 1]) - vec3(ps[i_g])) / l) - d3;
     C *= l / (w_v1 + w_v2 + (w_q * 4 * l * l));
@@ -664,7 +670,8 @@ void densityConstraint(int i_f) {
     int maxY = max(1, cell.y + 1);
     int minZ = max(cell.z - 1, 0);
     int maxZ = max(1, cell.z + 1);
-    vec3 deltaP = vec3(0);
+    vec3 deltaP = vec3(0); // fluid-fluid force
+
     for (int x = minX; x <= maxX; ++x) {
         for (int y = minY; y <= maxY; ++y) {
             for (int z = minZ; z <= maxZ; ++z) {
@@ -674,7 +681,7 @@ void densityConstraint(int i_f) {
                 int end = startIndices[key].startIndex + startIndices[key].particlesInBucket;
                 for (int s = start; s < end; ++s) {
                     int j_g = cellEntries[s];
-                    if (i_g != j_g) {
+                    if (i_g != j_g && sqLen(vec3(ps[i_g] - ps[i_g])) <= smoothingRadius*smoothingRadius) {
                         vec3 pij = vec3(ps[i_g] - ps[j_g]);
                         vec3 cGrad = spikyKernelGrad(pij, smoothingRadius);
 
@@ -701,7 +708,7 @@ void densityConstraint(int i_f) {
                             deltaP += vorticity;
 
                             /* apply surface tension [AAT13] */
-                            vec3 grad = AI12STKernelNorm(pij, smoothingRadius);                         // [AAT13, Eq. 2]
+                            vec3 grad = AAI12TKernelNorm(pij, smoothingRadius);                         // [AAT13, Eq. 2]
                             vec3 cohesion = imass * jmass * grad * -f_cohesion;                         // [AAT13, Eq. 1]
                             vec3 curveDiff = vec3(curvatureNormals[i_f] - curvatureNormals[j_f]);
                             vec3 curvature = imass * curveDiff * -f_curvature;                          // [AAT13, Eq. 3]
@@ -711,11 +718,14 @@ void densityConstraint(int i_f) {
                         } else if (particles[j_g].t == PORE) {
                             int j_p = gToP(j_g);
                             /* apply hair adhesion [AAT13, Eq. 6] */
-                            deltaP += -f_adhesion * imass * (restDensity * poreData[j_p].volume) * AI12AdhesionKernelNorm(pij, smoothingRadius) * dt;
-
+                            deltaP += -f_adhesion *
+                                imass * 
+                                (restDensity * poreData[j_p].volume) * 
+                                AAI12AdhesionKernelNorm(pij, smoothingRadius) * 
+                                dt;
                             // todo
-                            /* apply modified artificial pressure [Lin15, Eq. 7] and [MM13, Eq. 13] */
-                            // deltaP += -imass * (1-calculateSaturation(j_p)) * 
+                            /* apply modified artificial pressure [Lin14, Eq. 7] and [MM13, Eq. 13] */
+                            // deltaP -= 0.00001 * imass * (1-calculateSaturation(j_p)) * 
                             //     restDensity * (restDensity * poreData[j_p].volume) * 
                             //     (corr/(fluidDensities[i_f]*fluidDensities[i_f])) * cGrad;
                         }
@@ -760,8 +770,8 @@ void computeClumpingForce(int i_p) {
                         int strandCountJ = hairStrands[vertexStrandMap[poreData[j_p].startIndex]].nVertices;
                         int strandStartJ = hairStrands[vertexStrandMap[poreData[j_p].startIndex]].startVertexIdx;
                         float hairWeightJ = (poreData[j_p].startIndex - strandStartJ + 1.f) / float(strandCountJ);
-                        if (hairWeightI < 0.7) continue;
-                        if (hairWeightJ < 0.7) continue;
+                        if (hairWeightI < 0.25) continue;
+                        if (hairWeightJ < 0.25) continue;
                         /* 
                         todo: try different clumping restrictions: 
                         * don't clump with same strand
@@ -769,8 +779,8 @@ void computeClumpingForce(int i_p) {
                         * [don't clump if start indices are closer to the root / clump with a gradient from the root]
                         * clump with a lower priority
                         */
-                        if (poreData[i_p].density < 0.1) continue;
-                        if (poreData[j_p].density < 0.1) continue;
+                        if (poreData[i_p].density < 1e-9) continue;
+                        if (poreData[j_p].density < 1e-9) continue;
                         float avgSat = (calculateSaturation(i_p) + calculateSaturation(j_p)) / 2;
                         float psi_i = restDensity * poreData[i_p].volume * hairWeightI;
                         float psi_j = restDensity * poreData[j_p].volume * hairWeightJ;
@@ -778,7 +788,7 @@ void computeClumpingForce(int i_p) {
                         // float U = 1 / poreData[i_p].density;
                         vec3 dff = (ps[i_g] - ps[j_g]).xyz;
                         if (sqLen(dff) == 0) continue;
-                        vec3 nforce = avgSat * U * psi_i * psi_j * AI12STKernelNorm(dff, smoothingRadius); // [Lin15, Eq. 11]
+                        vec3 nforce = avgSat * U * psi_i * psi_j * AAI12TKernelNorm(dff, smoothingRadius); // [Lin14, Eq. 11]
                         // if (vertexStrandMap[poreData[j_p].startIndex] == vertexStrandMap[poreData[i_p].startIndex]) { force += nforce/10; continue; }
                         force += nforce;
                     }
@@ -788,6 +798,8 @@ void computeClumpingForce(int i_p) {
     }
 
     // apply clumping forces to connected hair particles
+    particles[poreData[i_p].startIndex].d += poreData[i_p].density * poreData[i_p].startStrength;
+    particles[poreData[i_p].endIndex].d += poreData[i_p].density * poreData[i_p].endStrength;
     ps[poreData[i_p].startIndex] += vec4(-f_clumping * force * poreData[i_p].startStrength, 0);
     ps[poreData[i_p].endIndex] += vec4(-f_clumping * force * poreData[i_p].endStrength, 0);
 }
@@ -815,6 +827,9 @@ void predict(int i_g) {
             us[j_h] = rods[j_h].q + 0.5f * qmul(rods[j_h].q, vec4(rods[j_h].v.xyz, 0)) * dt;
             us[j_h] = qnorm(us[j_h]);
         }
+
+        // todo: decrease wetness over time in line with diffusion
+        particles[i_g].d = max(0, particles[i_g].d - 0.001); // reset wetness
     } else if (particles[i_g].t == FLUID) {
         ps[i_g] = particles[i_g].x + particles[i_g].v * dt;
         vec3 halfBounds = (bounds - vec3(particleRadius)) / 2.f;

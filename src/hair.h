@@ -356,20 +356,17 @@ class Hair {
         shader->setMat4("view", SM::camera->getViewMatrix());
         shader->setMat4("proj", SM::camera->getPerspectiveMatrix());
         shader->setVec3("viewPos", SM::camera->pos);
-        shader->setVec4("guideColour", guideColour);
         shader->setFloat("particleRadius", particleRadius);
         shader->setFloat("nearPlaneHeight", heightOfNearPlane);
         shader->setVec4("colour", hairColour);
-        glPatchParameteri(GL_PATCH_VERTICES, 4);
-        // glMultiDrawArraysIndirect(GL_PATCHES, 0, numStrands, 0);
+        shader->setVec3("pbrMaterial.albedo", vec3(hairColour));
+        shader->setFloat("pbrMaterial.metalness", metalness);
+        shader->setFloat("pbrMaterial.roughness", roughness);
+        shader->setFloat("fresnelPower", fresnelExponent);
+        shader->setVec3("headPos", vec3(headTrans[3]));
+        glPatchParameteri(GL_PATCH_VERTICES, 4); // catmull-rom splines use at 4 points: 2 controls, 2 line points
         glMultiDrawElementsIndirect(GL_PATCHES, GL_UNSIGNED_INT, 0, numStrands, 0);
-        // if (showLines) {
-        //     glMultiDrawArraysIndirect(GL_LINE_STRIP, 0, numStrands, 0);
-        // }
-        // if (showPoints) {
-        //     shader->setVec4("colour", vec4(0.75, 0.3, 0.3, 1));
-        //     glMultiDrawArraysIndirect(GL_POINTS, 0, numStrands, 0);
-        // }
+
         glBindVertexArray(0);
     }
 
@@ -459,15 +456,18 @@ class Hair {
     float f_l_drag = 0.98f;  // vertex air resistance
     float f_a_drag = 0.6f;   // rod rotation resistance
     float f_porosity = .25;
-    float f_clumping = -0.0005;
+    float f_clumping = -0.0002;
+    int clumpingRange = 1;
 
     /* Hair */
     mat4 headTrans = translate(mat4(1), vec3(150, 6, 150));
     vec4 hairColour = vec4(42, 25, 5, 255) / 255.f;
-    vec4 guideColour = vec4(105, 175, 55, 255) / 255.f;
+    float metalness = 0.1;
+    float roughness = 0.9;
+    float fresnelExponent = 5;
     float sRad = 0.05;       // rod thickness
     float rad = .5f;         // strand coil radius
-    float strandLength = 8;  // length of a strand
+    float strandLength = 5;  // length of a strand
     int nCurls = 3;          // number of curls in a strand
     int poreSamples = 1;
 

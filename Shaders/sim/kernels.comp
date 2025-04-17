@@ -47,8 +47,20 @@ vec3 spikyKernelGrad(vec3 r, float h) {
     return spikyGradConst * dff * dff * (r / dst);
 }
 
+float viscosityKernel(vec3 r_, float h) {
+    float sdst = dot(r_, r_);
+    if (sdst >= h * h) return 0;
+
+    float r = max(sqrt(sdst), 1e-9f);
+    float r2 = r * r;
+    float r3 = r2 * r;
+    float dff = (-r3 / (2 * pow(h, 3))) + (r2 / pow(h, 2)) + (h / (2 * r)) - 1;
+    float viscConst = 15.f / (2 * PI * pow(h, 3));
+    return dff * viscConst;
+}
+
 /* [AAI12, Eq. 2] */
-vec3 AI12STKernelNorm(vec3 r, float h) {
+vec3 AAI12TKernelNorm(vec3 r, float h) {
     float sdst = dot(r, r);
     float dst = max(sqrt(sdst), 1e-9f);
     float splineGradConst = 32 / (PI * pow(h, 9));
@@ -64,7 +76,7 @@ vec3 AI12STKernelNorm(vec3 r, float h) {
 }
 
 /* [AAI12, Eq. 6-7] */
-vec3 AI12AdhesionKernelNorm(vec3 r, float h) {
+vec3 AAI12AdhesionKernelNorm(vec3 r, float h) {
     float sdst = dot(r, r);
     float dst = max(sqrt(sdst), 1e-9f);
     if (!(2 * dst > h && dst <= h)) return vec3(0);
@@ -73,4 +85,20 @@ vec3 AI12AdhesionKernelNorm(vec3 r, float h) {
     float root = pow(rootVal, 1.f/4.f); // quartic root
     float splineGradConst = 0.007 / pow(h, 3.25);
     return splineGradConst * root * (r/dst);
+}
+
+/* [Lin14, Eq. 12] */
+vec3 ClumpingKernelNorm(vec3 r, float h, float rad) {
+    float sdst = dot(r, r);
+    float dst = max(sqrt(sdst), 1e-9f);
+    float splineGradConst = 32 / (PI * pow(h, 9));
+    float R = rad + rad;
+    float q = (dst + h/2 - R) * R/h;
+    float dff = h - q;
+    float prod = pow(dff, 3) * pow(q, 3);
+    if (dst > R && dst <= h) {
+        return splineGradConst * prod * (r/dst);
+    } else {
+        return vec3(0);
+    }
 }

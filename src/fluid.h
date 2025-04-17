@@ -588,12 +588,12 @@ class Fluid {
     float restDensity = -5e3f;
     float restDensityInv = 1 / restDensity;
     float relaxationEpsilon = 1e-2f;
-    float SOR = 1.7;
+    float SOR = 1.4;
     float k = 1;  // stiffness
     float f_cohesion = 80.f;
     float f_curvature = 1e-3f;
-    float f_viscosity = 1.3f;
-    float f_adhesion = 750.f;
+    float f_viscosity = 2.3f;
+    float f_adhesion = 3750.f;
 
     /* Rendering */
     bool showOutline = true;
@@ -601,7 +601,7 @@ class Fluid {
     bool showBounds = true;
     float depthStrength = 150;
     float thicknessStrength = 0.5;
-    int renderStage = COMPOSITION;
+    int renderStage = SPRITE;
     int kernelHalfWidth = 3;
     int maxKernelHalfWidth = 11;
     bool showDiffuseOnly = false;

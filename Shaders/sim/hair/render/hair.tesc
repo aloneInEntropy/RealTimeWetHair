@@ -1,8 +1,6 @@
 #version 460 core
 
-layout (vertices = 2) out;
-// layout (location = 0) flat in uint particleID;
-
+layout (vertices = 2) out; // the inner line of the spline segment
 
 in VS_OUT {
     flat uint particleID;
@@ -26,17 +24,12 @@ void main() {
     gl_TessLevelOuter[0] = float(1);
     gl_TessLevelOuter[1] = float(8);
     gl_out[gl_InvocationID].gl_Position = gl_in[gl_InvocationID].gl_Position;
-    if(gl_InvocationID == 0) {
 
+    if (gl_InvocationID == 0) {
 		p_1 = gl_in[0].gl_Position;
 		p_2 = gl_in[3].gl_Position;
-	}
-
-	if(gl_InvocationID == 0) {
 		gl_out[gl_InvocationID].gl_Position = gl_in[1].gl_Position;
-	}
-
-	if(gl_InvocationID == 1) {
+	} else if (gl_InvocationID == 1) {
 		gl_out[gl_InvocationID].gl_Position = gl_in[2].gl_Position;
 	}
 
