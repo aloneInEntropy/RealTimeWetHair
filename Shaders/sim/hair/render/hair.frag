@@ -57,6 +57,9 @@ vec3 fresnel(float cos_theta, vec3 F0);
 // https://typhomnt.github.io/teaching/ray_tracing/pbr_intro/
 // http://www.codinglabs.net/article_physically_based_rendering_cook_torrance.aspx
 
+// ! https://www.gdcvault.com/play/1014538/Approximating-Translucency-for-a-Fast
+// ^ interesting to mention for improved lighting in the future
+
 void main() {
     vec4 pixelPos = vec4(es.eyeSpacePos, 1);
     vec4 clipSpacePos = proj * pixelPos;
@@ -75,11 +78,11 @@ void main() {
 	vec3 viewDir = normalize(viewPos - es.fragPos);
 
 	// directional lights
-	vec3 result = CalcDirLight(vec3(0, -1, 0), norm, viewDir);
+	vec3 result = CalcDirLight(vec3(-1, -1, 0), norm, viewDir);
 
 	vec3 ev = normalize(es.fragPos - viewPos);
 	float ff = abs(dot(ev, norm));
-	result += fresnel(ff, vec3(0.05));
+	result += fresnel(ff, vec3(0.005)) * es.vWeight * (outDepth/150) * 0.5;
 	/* gamma correction */
 	// result /= (result + vec3(1));
 	// result = pow(result, vec3(1/2.2));
@@ -94,13 +97,15 @@ void main() {
 vec3 CalcDirLight(vec3 lightDir, vec3 N, vec3 V) {
 	vec3 L = normalize(-lightDir);
 	vec3 H = normalize(L + V);
-	vec3 radiance = pbrMaterial.albedo * wetnessSub;
+	vec3 radiance = pbrMaterial.albedo * clamp(wetnessSub, 0.4, 1);
+	float mtl = clamp(pbrMaterial.metalness + wetness, 0, 1);
+	float rgh = clamp(pbrMaterial.roughness - wetness, 0, 1);
 
 	float NoL = max(dot(N, L), 0);
 	vec3 F0 = vec3(0.5);
-	F0 = mix(F0, pbrMaterial.albedo, pbrMaterial.metalness * wetness);
-	float D = GGX_D(N, H, pbrMaterial.roughness * wetnessSub);
-	float G = GGX_G(N, V, L, pbrMaterial.roughness * wetnessSub);
+	F0 = mix(F0, pbrMaterial.albedo, mtl);
+	float D = GGX_D(N, H, rgh);
+	float G = GGX_G(N, V, L, rgh);
 	vec3 F = fresnel(max(dot(H, V), 0), F0);
 
 	vec3 BRDF = (D * G * F) / (4.0 * max(dot(N, V), 0.0) * NoL + 0.0001);
