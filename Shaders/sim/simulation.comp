@@ -225,7 +225,6 @@ void computeClumpingForce(int i_p);
 
 /* Universal functions */
 void applyExternalForces(int i_hf);
-void computeDiffusion(int i);
 void predict(int i);
 void updateVelocities(int i);
 void resolveCollisions(uint i);
@@ -269,8 +268,8 @@ const float perm_K = 1e-11; // [Lin14]
 const float off_K = 0.2; // [Lin14]
 const mat3 K = mat3(perm_K, off_K,off_K, off_K,perm_K,off_K, off_K,off_K,perm_K); // [LAD08]
 const float collisionResolutionSpeed = 10;
-const float maxSpeed = 50;
-const float fluidMassDiffusionFactor = .01;
+const float maxSpeed = 20;
+const float fluidMassDiffusionFactor = 1;
 
 /* ========================================================================================================================================================= */
 /* ========================================================================================================================================================= */
@@ -312,7 +311,8 @@ void applyExternalForces(int i_hf) {
         particles[i_hf].v += vec4(fv_gravity * particles[i_hf].d * dt, 0);
     }
 
-    particles[i_hf].v = vec4(clampAndReset(particles[i_hf].v.xyz, vec3(-maxSpeed), vec3(maxSpeed), 0), 0);
+    // float spd = length(particles[i_hf].v.xyz);
+    // particles[i_hf].v = vec4(clampAndReset(particles[i_hf].v.xyz, vec3(-maxSpeed), vec3(maxSpeed), spd/10), 0);
 }
 
 // resolve simple scene collisions
@@ -376,32 +376,32 @@ float calculateSaturation(int i_p) {
     return (1/particles[i_g].w) / (restDensity * f_porosity * poreData[i_p].volume + 1e-6);
 }
 
-// compute the change in fluid mass when near porous particles
-void computeDiffusion(int i_g) {
-    ivec3 cell = posToCell(ps[i_g]);
-    int minX = max(cell.x - 1, 0);
-    int maxX = max(1, cell.x + 1);
-    int minY = max(cell.y - 1, 0);
-    int maxY = max(1, cell.y + 1);
-    int minZ = max(cell.z - 1, 0);
-    int maxZ = max(1, cell.z + 1);
-    for (int x = minX; x <= maxX; ++x) {
-        for (int y = minY; y <= maxY; ++y) {
-            for (int z = minZ; z <= maxZ; ++z) {
-                ivec3 ncell = {x, y, z};
-                uint key = flatten(ncell);
-                int start = startIndices[key].startIndex;
-                int end = startIndices[key].startIndex + startIndices[key].particlesInBucket;
-                for (int s = start; s < end; ++s) {
-                    int j_g = cellEntries[s];
-                    if (particles[j_g].t == PORE) {
-                        // todo
-                    }
-                }
-            }
-        }
-    }
-}
+// // compute the change in fluid mass when near porous particles
+// void computeDiffusion(int i_g) {
+//     ivec3 cell = posToCell(ps[i_g]);
+//     int minX = max(cell.x - 1, 0);
+//     int maxX = max(1, cell.x + 1);
+//     int minY = max(cell.y - 1, 0);
+//     int maxY = max(1, cell.y + 1);
+//     int minZ = max(cell.z - 1, 0);
+//     int maxZ = max(1, cell.z + 1);
+//     for (int x = minX; x <= maxX; ++x) {
+//         for (int y = minY; y <= maxY; ++y) {
+//             for (int z = minZ; z <= maxZ; ++z) {
+//                 ivec3 ncell = {x, y, z};
+//                 uint key = flatten(ncell);
+//                 int start = startIndices[key].startIndex;
+//                 int end = startIndices[key].startIndex + startIndices[key].particlesInBucket;
+//                 for (int s = start; s < end; ++s) {
+//                     int j_g = cellEntries[s];
+//                     if (particles[j_g].t == PORE) {
+//                         // todo
+//                     }
+//                 }
+//             }
+//         }
+//     }
+// }
 
 // compute the representative volume of porous particles
 // `i_p` represents porous particles (dispatched with porousParticleCount)
@@ -459,9 +459,9 @@ void computeDensity(int i_fp) {
                 int end = startIndices[key].startIndex + startIndices[key].particlesInBucket;
                 for (int s = start; s < end; ++s) {
                     int j_g = cellEntries[s];
-                    if (particles[j_g].t != FLUID) continue;
-                    density += (1.f / particles[j_g].w) *
-                                poly6Kernel(vec3(ps[i_g] - ps[j_g]), smoothingRadius);
+                    if (particles[j_g].t == FLUID) {
+                        density += (1.f / particles[j_g].w) * poly6Kernel(vec3(ps[i_g] - ps[j_g]), smoothingRadius);
+                    }
                 }
             }
         }
@@ -586,6 +586,7 @@ void computeFluidAuxillaries(int i_f) {
                 int end = startIndices[key].startIndex + startIndices[key].particlesInBucket;
                 for (int s = start; s < end; ++s) {
                     int j_g = cellEntries[s];
+                    if (sqLen(vec3  (ps[i_g] - ps[j_g])) > smoothingRadius*smoothingRadius) continue;
                     if (particles[j_g].t == PORE) { nearPore = true; continue; }
                     if (particles[j_g].t != FLUID) continue;
 
@@ -606,9 +607,9 @@ void computeFluidAuxillaries(int i_f) {
     lambdas[i_f] = -numer / (denom + relaxationEpsilon + 1e-6f);
     omegas[i_f] = vec4(omega, 0);
     if (nearPore) {
-        particles[i_g].d += fluidMassDiffusionFactor * fluidDensities[i_f];
+        particles[i_g].d += fluidMassDiffusionFactor * fluidDensities[i_f] * dt;
     } else {
-        particles[i_g].d = 1;
+        particles[i_g].d = max(1, particles[i_g].d - fluidMassDiffusionFactor * fluidDensities[i_f] * dt);
     }
 }
 
@@ -722,15 +723,14 @@ void densityConstraint(int i_f) {
                             vec3 curvature = imass * curveDiff * -f_curvature;                          // [AAT13, Eq. 3]
                             float K = (2 * restDensity) / (fluidDensities[i_f] + fluidDensities[j_f]);  // [AAT13, Eq. 4]
                             vec3 surfaceTension = K * (cohesion + curvature);                           // [AAT13, Eq. 5]
-                            deltaP += surfaceTension * dt;
+                            deltaP += surfaceTension;
                         } else if (particles[j_g].t == PORE) {
                             int j_p = gToP(j_g);
                             /* apply hair adhesion [AAT13, Eq. 6] */
                             deltaP += -f_adhesion *
                                 imass * 
                                 (restDensity * poreData[j_p].volume) * 
-                                AAI12AdhesionKernelNorm(pij, smoothingRadius) * 
-                                dt;
+                                AAI12AdhesionKernelNorm(pij, smoothingRadius);
                             // todo
                             /* apply modified artificial pressure [Lin14, Eq. 7] and [MM13, Eq. 13] */
                             // deltaP -= 0.00001 * imass * (1-calculateSaturation(j_p)) * 
@@ -778,8 +778,8 @@ void computeClumpingForce(int i_p) {
                         int strandCountJ = hairStrands[vertexStrandMap[poreData[j_p].startIndex]].nVertices;
                         int strandStartJ = hairStrands[vertexStrandMap[poreData[j_p].startIndex]].startVertexIdx;
                         float hairWeightJ = (poreData[j_p].startIndex - strandStartJ + 1.f) / float(strandCountJ);
-                        if (hairWeightI < 0.25) continue;
-                        if (hairWeightJ < 0.25) continue;
+                        // if (hairWeightI < 0.25) continue;
+                        // if (hairWeightJ < 0.25) continue;
                         /* 
                         todo: try different clumping restrictions: 
                         * don't clump with same strand
@@ -861,7 +861,8 @@ void updateVelocities(int i_g) {
     ps[i_g] = vec4(clampV(vec3(ps[i_g]), centre - halfBounds, centre + halfBounds), 0); // clamp to fluid range
     if (particles[i_g].t == HAIR) {
         particles[i_g].v = vec4(clampV(f_l_drag * vec3(ps[i_g] - particles[i_g].x) / dt, vec3(-maxSpeed), vec3(maxSpeed)), 0);
-        particles[i_g].v = vec4(clampAndReset(particles[i_g].v.xyz, vec3(-maxSpeed), vec3(maxSpeed), 0), 0);
+        // float spd = length(particles[i_g].v.xyz);
+        // particles[i_g].v = vec4(clampAndReset(particles[i_g].v.xyz, vec3(-maxSpeed*3), vec3(maxSpeed*3), spd/10), 0);
         // particles[i_g].v = f_l_drag * (ps[i_g] - particles[i_g].x) / dt;
         particles[i_g].x = ps[i_g] * ss_SOR + particles[i_g].x * (1 - ss_SOR);
         ps[i_g] = particles[i_g].x;
@@ -877,7 +878,8 @@ void updateVelocities(int i_g) {
     } else if (particles[i_g].t == FLUID) {
         // particles[i_g].v = (ps[i_g] - particles[i_g].x) / dt;
         particles[i_g].v = vec4(clampV(vec3(ps[i_g] - particles[i_g].x) / dt, vec3(-maxSpeed), vec3(maxSpeed)), 0);
-        particles[i_g].v = vec4(clampAndReset(particles[i_g].v.xyz, vec3(-maxSpeed), vec3(maxSpeed), 0), 0);
+        // float spd = length(particles[i_g].v.xyz);
+        // particles[i_g].v = vec4(clampAndReset(particles[i_g].v.xyz, vec3(-maxSpeed), vec3(maxSpeed), spd/2), 0);
         particles[i_g].x = ps[i_g] * dn_SOR + particles[i_g].x * (1 - dn_SOR);
         ps[i_g] = particles[i_g].x;
     }
@@ -907,7 +909,7 @@ void main() {
             break;
         case DIFFUSION:
             if (idx >= fluidParticleCount) return;
-            computeDiffusion(idx);
+            // computeDiffusion(idx);
             break;
         case REP_VOLUME:
             if (idx >= porousParticleCount) return;

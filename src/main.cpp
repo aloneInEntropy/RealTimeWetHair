@@ -218,10 +218,10 @@ void displayUI() {
                 ImGui::SliderFloat("Epsilon", &sim->fluid->relaxationEpsilon, 0, 1);
                 ImGui::SliderFloat("Rest Density", &sim->fluid->restDensity, 0.01, 1000);
                 ImGui::SliderFloat("Smoothing Radius", &sim->fluid->smoothingRadius, 0.01, 1000);
-                ImGui::DragFloat("Cohesion", &sim->fluid->f_cohesion, 0.1f, 0, 3000);
+                ImGui::DragFloat("Cohesion", &sim->fluid->f_cohesion, 0.001f, 0, 3000);
                 ImGui::DragFloat("Curvature", &sim->fluid->f_curvature, 0.0001f, 0, 1);
                 ImGui::DragFloat("Adhesion", &sim->fluid->f_adhesion, 0.1, 0, 10000);
-                ImGui::DragFloat("Viscosity", &sim->fluid->f_viscosity, 0.01, 0, 3);
+                ImGui::DragFloat("Viscosity", &sim->fluid->f_viscosity, 0.001, 0, 3);
                 ImGui::TreePop();
             }
 
