@@ -1,4 +1,4 @@
-/* Add each particle to its bin. */
+/* Find the starting location for this bucket and allocate space for the next one. */
 
 #version 460 core
 

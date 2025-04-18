@@ -17,20 +17,19 @@ layout (local_size_x = LOCAL_SIZE) in;
 /* ==================================================================== Enums ==================================================================== */
 /* Simulation stages */
 #define APPLY_EXTERNAL_FORCES 0
-#define DIFFUSION 1 // todo: if implemented, this should either come after REP_VOLUME, or porous volumes need to be calculated beforehand
-#define REP_VOLUME 2
-#define COMPUTE_DENSITIES 3
-#define COMPUTE_VISCOSITES 4
-#define COMPUTE_FLUID_AUX 5
-#define PREDICT 6
-#define PREDICT_POROUS 7
-#define RESOLVE_COLLISIONS 8
-#define STRETCH_SHEAR_CONSTRAINT 9
-#define BEND_TWIST_CONSTRAINT 10
-#define DENSITY_CONSTRAINT 11
-#define CLUMPING 12
-#define UPDATE_VELOCITIES 13
-#define UPDATE_POROUS 14
+#define REP_VOLUME 1
+#define COMPUTE_DENSITIES 2
+#define COMPUTE_VISCOSITES 3
+#define COMPUTE_FLUID_AUX 4
+#define PREDICT 5
+#define PREDICT_POROUS 6
+#define RESOLVE_COLLISIONS 7
+#define STRETCH_SHEAR_CONSTRAINT 8
+#define BEND_TWIST_CONSTRAINT 9
+#define DENSITY_CONSTRAINT 10
+#define CLUMPING 11
+#define UPDATE_VELOCITIES 12
+#define UPDATE_POROUS 13
 
 /* Particle types */
 #define HAIR 0
@@ -262,9 +261,6 @@ vec3 clampAndReset(vec3 v, vec3 lo, vec3 hi, float new_value) {
 }
 
 /* ==================================================================== Constants ==================================================================== */
-const float perm_K = 1e-11; // [Lin14]
-const float off_K = 0.2; // [Lin14]
-const mat3 K = mat3(perm_K, off_K,off_K, off_K,perm_K,off_K, off_K,off_K,perm_K); // [LAD08]
 const float collisionResolutionSpeed = 10;
 const float maxSpeed = 20;
 
@@ -900,10 +896,6 @@ void main() {
         case APPLY_EXTERNAL_FORCES:
             if (idx >= particles.length()) return;
             applyExternalForces(idx);
-            break;
-        case DIFFUSION:
-            if (idx >= fluidParticleCount) return;
-            // computeDiffusion(idx);
             break;
         case REP_VOLUME:
             if (idx >= porousParticleCount) return;

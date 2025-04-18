@@ -5,6 +5,7 @@ out vec3 fragPos;
 uniform mat4 proj;
 uniform mat4 view;
 uniform vec3 viewPos;
+out vec3 eyeCoord;
 
 const vec3 vertices[4] = {
 	vec3(-1, 0, -1), // bl
@@ -22,4 +23,5 @@ void main() {
 	vec4 vp = vec4(vPos, 1);
 	gl_Position = proj * view * vp;
 	fragPos = vPos;
+	eyeCoord = vec3(view * vec4(vPos, 1.0));
 }

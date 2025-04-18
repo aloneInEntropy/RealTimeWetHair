@@ -1,7 +1,12 @@
 #version 460 core
 
 in vec3 fragPos;
-out vec4 FragColour;
+in vec3 eyeCoord;
+
+layout (location = 0) out vec4 FragColour;
+layout (location = 1) out vec4 DepthColour;
+
+uniform mat4 proj;
 uniform vec3 viewPos;
 uniform vec4 gridColorThin = vec4(0.5, 0.5, 0.5, 1.0);
 uniform vec4 gridColorThick = vec4(vec3(0.75), 1);
@@ -86,4 +91,11 @@ void main() {
     if (fragPos.x > -minx && fragPos.x < minx) Color.xyz = vec3(0.2, 0.2, 1); // z axis
     if (fragPos.z > -minz && fragPos.z < minz) Color.xyz = vec3(1, 0.2, 0.2); // x axis
     FragColour = Color;
+
+    vec4 pixelPos = vec4(eyeCoord, 1);
+	vec4 clipSpacePos = proj * pixelPos;
+	float ndc = clipSpacePos.z / clipSpacePos.w;
+	gl_FragDepth = ndc *.5 + .5;
+	float outDepth = -pixelPos.z;
+	DepthColour = vec4(outDepth/150, 0, 0, 1);
 }

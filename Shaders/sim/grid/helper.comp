@@ -1,4 +1,4 @@
-/* Add each particle to its bin. */
+/* Helper functions. */
 
 #version 460 core
 

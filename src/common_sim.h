@@ -21,7 +21,6 @@ enum Phase {
 // The stage to dispatch the simulation to
 enum SimulationStage {
     APPLY_EXTERNAL_FORCES,
-    DIFFUSION,
     REP_VOLUME,
     COMPUTE_DENSITIES,
     COMPUTE_VISCOSITES,
@@ -35,7 +34,7 @@ enum SimulationStage {
     CLUMPING,
     UPDATE_VELOCITIES,
     UPDATE_POROUS,
-    N_SIM_STAGES = 15
+    N_SIM_STAGES = 14
 };
 
 // Particle distribution
