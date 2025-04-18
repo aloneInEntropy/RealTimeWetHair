@@ -25,7 +25,7 @@ void init() {
         // if (rndCnt >= 512) break;
         if (largeHead->vertexData[i].pos.y >= 0) {
             // only normals facing out/up
-            hs.push_back({10, vec4(largeHead->vertexData[i].pos, 1), largeHead->vertexData[i].norm});
+            hs.push_back({15, vec4(largeHead->vertexData[i].pos, 1), largeHead->vertexData[i].norm});
             rndCnt++;
         }
     }
@@ -193,7 +193,6 @@ void displayUI() {
         ImGui::DragFloat3("Gravity", &CommonSim::fv_gravity.x, 0.1f, -200, 200);
         if (ImGui::CollapsingHeader("Hair\t\t\t", ImGuiTreeNodeFlags_DefaultOpen)) {
             if (ImGui::TreeNodeEx("Physics##Hair", ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAvailWidth)) {
-                ImGui::DragFloat3("Torque", &sim->hair->torque.x, 0.1f, -100, 100);
                 ImGui::DragFloat("Drag", &sim->hair->f_l_drag, 0.001f, 0, 1);
                 ImGui::DragFloat("Angular Drag", &sim->hair->f_a_drag, 0.001f, 0, 1);
                 ImGui::DragFloat("Clumping", &sim->hair->f_clumping, 0.001f, -100, 100);

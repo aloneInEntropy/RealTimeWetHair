@@ -284,16 +284,16 @@ float darbouxSign(int j_h) {
     return -1;
 }
 
-// apply gravity, wind, and torque
-// `i_g` represents a global particle
+// apply gravity
+// `i_hf` represents a hair or fluid particle
 void applyExternalForces(int i_hf) {
     int i_h = gToH(i_hf);
-    int i_f = gToF(i_hf); // this works because fluids come before porous particles
+    int i_f = gToF(i_hf);
 
     // hair gravity
     if (particles[i_hf].t == HAIR) {
         if (i_h == getRootVertex(i_h)) return;
-        particles[i_hf].v += vec4(fv_gravity * dt, 0);
+        particles[i_hf].v += vec4(fv_gravity * max(1, particles[i_hf].d / 100) * dt, 0);
         
         // hair torque
         if (i_h == getTailVertex(i_h)) return;
@@ -303,9 +303,6 @@ void applyExternalForces(int i_hf) {
         // fluid gravity
         particles[i_hf].v += vec4(fv_gravity * particles[i_hf].d * dt, 0);
     }
-
-    // float spd = length(particles[i_hf].v.xyz);
-    // particles[i_hf].v = vec4(clampAndReset(particles[i_hf].v.xyz, vec3(-maxSpeed), vec3(maxSpeed), spd/10), 0);
 }
 
 // resolve simple scene collisions
@@ -434,7 +431,7 @@ void computePorousVolume(int i_p) {
 // compute the porous hair or fluid density.
 // `i_fp` represents fluid or porous particles (dispatched with fluidParticleCount + porousParticleCount)
 void computeDensity(int i_fp) {
-    int i_g = i_fp + hairParticleCount; // convert to global particle index
+    int i_g = fToG(i_fp); // convert to global particle index
     float density = 0;
     ivec3 cell = posToCell(ps[i_g]);
     int minX = max(cell.x - 1, 0);
@@ -554,7 +551,7 @@ vec3 calcFluidConstraintGrad(int i_g, int j_g) {
     }
 }
 
-// compute fluid auxillary quantities (curvature normals, lambdas, and omegas)
+// compute fluid auxillary quantities (curvature normals, lambdas (scaling factors), and omegas)
 // `i_f` represents fluid particles (dispatched with fluidParticleCount)
 void computeFluidAuxillaries(int i_f) {
     int i_g = fToG(i_f);
@@ -745,6 +742,10 @@ void densityConstraint(int i_f) {
 // `i_p` represents porous particles (dispatched with porousParticleCount)
 void computeClumpingForce(int i_p) {
     int i_g = i_p + hairParticleCount + fluidParticleCount; // convert to global particle index
+    if (poreData[i_p].density < 1e-9) return;
+    int strandCountI = hairStrands[getStrandV(poreData[i_p].startIndex)].nVertices;
+    int strandStartI = hairStrands[getStrandV(poreData[i_p].startIndex)].startVertexIdx;
+    float hairWeightI = (poreData[i_p].startIndex - strandStartI + 1.f) / float(strandCountI);
     vec3 force = vec3(0);
     ivec3 cell = posToCell(ps[i_g]);
     int minX = max(cell.x - clumpingRange, 0);
@@ -765,29 +766,17 @@ void computeClumpingForce(int i_p) {
                     if (particles[j_g].t == PORE) {
                         int j_p = gToP(j_g);
                         if (getStrandV(poreData[j_p].startIndex) == getStrandV(poreData[i_p].startIndex)) continue;
-                        int strandCountI = hairStrands[getStrandV(poreData[i_p].startIndex)].nVertices;
-                        int strandStartI = hairStrands[getStrandV(poreData[i_p].startIndex)].startVertexIdx;
-                        float hairWeightI = (poreData[i_p].startIndex - strandStartI + 1.f) / float(strandCountI);
                         int strandCountJ = hairStrands[getStrandV(poreData[j_p].startIndex)].nVertices;
                         int strandStartJ = hairStrands[getStrandV(poreData[j_p].startIndex)].startVertexIdx;
                         float hairWeightJ = (poreData[j_p].startIndex - strandStartJ + 1.f) / float(strandCountJ);
-                        /* 
-                        todo: try different clumping restrictions: 
-                        * don't clump with same strand
-                        * don't clump if start indices are more than half the strand length apart
-                        * [don't clump if start indices are closer to the root / clump with a gradient from the root]
-                        * clump with a lower priority
-                        */
-                        if (poreData[i_p].density < 1e-9) continue;
+
                         if (poreData[j_p].density < 1e-9) continue;
                         float avgSat = (calculateSaturation(i_p) + calculateSaturation(j_p)) / 2;
                         float psi_i = restDensity * poreData[i_p].volume * hairWeightI;
                         float psi_j = restDensity * poreData[j_p].volume * hairWeightJ;
                         float U = 1 - min(1, poreData[j_p].density * restDensityInv);
-                        // float U = 1 / poreData[i_p].density;
-                        vec3 dff = (ps[i_g] - ps[j_g]).xyz;
-                        if (sqLen(dff) == 0) continue;
-                        vec3 nforce = avgSat * U * psi_i * psi_j * AAI12TKernelNorm(dff, smoothingRadius); // [Lin14, Eq. 11]
+                        vec3 pij = (ps[i_g] - ps[j_g]).xyz;
+                        vec3 nforce = avgSat * U * psi_i * psi_j * AAI12TKernelNorm(pij, smoothingRadius); // [Lin14, Eq. 11]
                         force += nforce;
                     }
                 }
@@ -805,10 +794,11 @@ void computeClumpingForce(int i_p) {
 void predict(int i_g) {
     int i_h = gToH(i_g);
     int i_f = gToF(i_g);
-    int i_p = gToP(i_g);
 
     if (particles[i_g].t == HAIR) {
-        // todo: hairs are only rotating about the head, but do not rotate to point in new direction
+        particles[i_g].d = max(0, particles[i_g].d - fluidMassDiffusionFactor); // reset wetness
+
+        // todo: strands are only rotating about the head, but do not rotate to point in new direction
         // ? rebuilding all quaternions and Darboux vectors when headTrans is updated (serial; one thead per strand)
         if (i_h == getRootVertex(i_h)) {
             ps[i_g] = headTrans * hairStrands[getStrandV(i_h)].root;
@@ -818,22 +808,12 @@ void predict(int i_g) {
 
         if (i_h == getTailVertex(i_h)) return;
         int j_h = toJ(i_h);
-        if (j_h == getRootRod(j_h)) {
-            us[j_h] = rods[j_h].q + 0.5f * qmul(rods[j_h].q, vec4(rods[j_h].v.xyz, 0)) * dt;
-            us[j_h] = qnorm(us[j_h]);
-        } else {
-            us[j_h] = rods[j_h].q + 0.5f * qmul(rods[j_h].q, vec4(rods[j_h].v.xyz, 0)) * dt;
-            us[j_h] = qnorm(us[j_h]);
-        }
-
-        // todo: decrease wetness over time in line with diffusion
-        particles[i_g].d = max(0, particles[i_g].d - 0.1); // reset wetness
+        us[j_h] = rods[j_h].q + 0.5f * qmul(rods[j_h].q, vec4(rods[j_h].v.xyz, 0)) * dt;
+        us[j_h] = qnorm(us[j_h]);
     } else if (particles[i_g].t == FLUID) {
         ps[i_g] = particles[i_g].x + particles[i_g].v * dt;
         vec3 halfBounds = (bounds - vec3(particleRadius)) / 2.f;
         ps[i_g] = vec4(clampV(vec3(ps[i_g]), centre - halfBounds, centre + halfBounds), 0); // clamp to fluid range
-    } else if (particles[i_g].t == PORE) {
-        
     }
 }
 
@@ -843,7 +823,7 @@ void predict(int i_g) {
 // `i_p` represents porous particles (dispatched with porousParticleCount)
 void updatePorousPositions(int i_p) {
     int i_g = pToG(i_p);
-    ps[i_g] = ps[poreData[i_p].startIndex] + (ps[poreData[i_p].endIndex] - ps[poreData[i_p].startIndex]) * poreData[i_p].endStrength * 0.0001;
+    ps[i_g] = ps[poreData[i_p].startIndex] + (ps[poreData[i_p].endIndex] - ps[poreData[i_p].startIndex]) * poreData[i_p].endStrength;
 }
 
 void updateVelocities(int i_g) {

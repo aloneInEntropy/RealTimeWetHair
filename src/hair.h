@@ -415,7 +415,7 @@ class Hair {
     float f_l_drag = 0.98f;  // vertex air resistance
     float f_a_drag = 0.6f;   // rod rotation resistance
     float f_porosity = .25;
-    float f_clumping = -0.0002;
+    float f_clumping = -0.000025;
     int clumpingRange = 1;
 
     /* Hair */
@@ -426,7 +426,7 @@ class Hair {
     float fresnelExponent = 5;
     float sRad = 0.05;       // rod thickness
     float rad = .5f;         // strand coil radius
-    float strandLength = 10;  // length of a strand
+    float strandLength = 4;  // length of a strand
     int nCurls = 4;          // number of curls in a strand
     int poreSamples = 1;
 
