@@ -61,8 +61,8 @@ struct Particle {
     vec4 v;   // particle velocity
     float w;  // particle inverse mass
     Phase t;  // particle type. one of HAIR, SOLID, or FLUID
-    float d;  // particle wetness for HAIR particles. undefined for any non-HAIR particles
-    int pd;   // padding
+    float d;  // hair wetness for HAIR particles. mass diffusion for FLUID particles. undefined for any PORE particles
+    int s;    // strand index for HAIR particles. undefined otherwise
 };
 
 // Indirect drawing command for `glMultiDrawArraysIndirect`
@@ -89,9 +89,6 @@ extern std::vector<vec4> ps;
 
 // Radius of a single particle
 extern float particleRadius;
-
-// The 3D grid containing the simulation.
-extern SpatialGrid* grid;
 
 /* SSBOs */
 extern unsigned particleBuffer;

@@ -222,6 +222,7 @@ void displayUI() {
                 ImGui::DragFloat("Curvature", &sim->fluid->f_curvature, 0.0001f, 0, 1);
                 ImGui::DragFloat("Adhesion", &sim->fluid->f_adhesion, 0.1, 0, 10000);
                 ImGui::DragFloat("Viscosity", &sim->fluid->f_viscosity, 0.001, 0, 3);
+                ImGui::DragFloat("Diffusion", &sim->fluid->fluidMassDiffusionFactor, 0.01, 0, 10);
                 ImGui::TreePop();
             }
 
@@ -238,13 +239,13 @@ void displayUI() {
                     "The maximum kernel size to use for the simlation. The actual kernel size is often too large, so this value limits it. "
                     "This will create a kernel of width 2 * n + 1.");
                 if (ImGui::TreeNodeEx("Rendering Stage", ImGuiTreeNodeFlags_SpanAvailWidth)) {
-                    ImGui::RadioButton("Sprite", &sim->fluid->renderStage, (int)Sim::PBF::SPRITE);
-                    ImGui::RadioButton("Velocity", &sim->fluid->renderStage, (int)Sim::PBF::VELOCITY);
-                    ImGui::RadioButton("Depth", &sim->fluid->renderStage, (int)Sim::PBF::DEPTH);
+                    ImGui::RadioButton("Sprite", &sim->fluid->renderStage, (int)Sim::PBF::SPRITE); ImGui::SameLine();
+                    ImGui::RadioButton("Velocity", &sim->fluid->renderStage, (int)Sim::PBF::VELOCITY); ImGui::SameLine();
+                    ImGui::RadioButton("Depth", &sim->fluid->renderStage, (int)Sim::PBF::DEPTH); ImGui::SameLine();
                     ImGui::RadioButton("Thickness", &sim->fluid->renderStage, (int)Sim::PBF::THICKNESS);
-                    ImGui::RadioButton("Smooth Depth", &sim->fluid->renderStage, (int)Sim::PBF::SMOOTH_DEPTH);
+                    ImGui::RadioButton("Smooth Depth", &sim->fluid->renderStage, (int)Sim::PBF::SMOOTH_DEPTH); ImGui::SameLine();
                     ImGui::RadioButton("Smooth Thickness", &sim->fluid->renderStage, (int)Sim::PBF::SMOOTH_THICKNESS);
-                    ImGui::RadioButton("Normal", &sim->fluid->renderStage, (int)Sim::PBF::NORMAL);
+                    ImGui::RadioButton("Normal", &sim->fluid->renderStage, (int)Sim::PBF::NORMAL); ImGui::SameLine();
                     ImGui::RadioButton("Composition", &sim->fluid->renderStage, (int)Sim::PBF::COMPOSITION);
                     if (sim->fluid->renderStage == Sim::PBF::COMPOSITION)
                         ImGui::Checkbox("Show Diffuse Only", &sim->fluid->showDiffuseOnly);

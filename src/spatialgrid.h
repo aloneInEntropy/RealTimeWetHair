@@ -57,62 +57,6 @@ class SpatialGrid {
         glNamedBufferStorage(totalParticleCountIndexBuffer, sizeof(int) * totalParticleCountIndex.size(), totalParticleCountIndex.data(), bf);
     }
 
-    // Initialise the grid
-    void initGrid() {
-        nTotalCells = ps.size() * 3;
-        startIndices.clear();
-        startIndices.resize(nTotalCells + 1, 0);
-        cellEntries.clear();
-        cellEntries.resize(ps.size(), 0);
-        loadGrid();
-    }
-
-    // Load the grid
-    void loadGrid() {
-        // add to startIndices
-        for (int i = 0; i < ps.size(); ++i) {
-            vec3 p = ps[i];
-            ivec3 cell = posToCell(p);
-            unsigned key = flatten(cell);
-            startIndices[key]++;
-        }
-
-        // compute inclusive scan (partial/prefix sum)
-        for (int i = 1; i < nTotalCells; ++i) {
-            startIndices[i] += startIndices[i - 1];
-        }
-
-        // compute cell entries
-        for (int i = 0; i < ps.size(); ++i) {
-            vec3 p = ps[i];
-            ivec3 cell = posToCell(p);
-            unsigned key = flatten(cell);
-            startIndices[key]--;
-            cellEntries[startIndices[key]] = i;
-        }
-    }
-
-    // Get the grid cell containing point `p`. Will crash if `p` is outside the grid.
-    ivec3 posToCell(vec3 p) {
-        return ivec3(floor(p.x / cellSize), floor(p.y / cellSize), floor(p.z / cellSize));
-    }
-
-    // Convert a grid cell `cell` to a flattened version that can be used to access `startIndices`.
-    unsigned flatten(ivec3 cell) {
-        unsigned tmpx = (cell.x * 78455519);
-        unsigned tmpy = (cell.y * 41397959);
-        unsigned tmpz = (cell.z * 27614441);
-        return abs(tmpx ^ tmpy ^ tmpz) % nTotalCells;
-    }
-
-    // Is the grid cell `cell` empty?
-    bool isCellEmpty(ivec3 cell) {
-        unsigned key = flatten(cell);
-        int startIdx = startIndices[key];
-        int endIdx = startIndices[key + 1];
-        return startIdx == endIdx;
-    }
-
     // Organise the grid using compute shaders
     void dispatchKernels() {
         glBindVertexArray(VAO);
@@ -156,33 +100,7 @@ class SpatialGrid {
     unsigned startIndicesBuffer = 0;
     unsigned cellEntriesBuffer = 0;
     unsigned totalParticleCountIndexBuffer = 0;
-    /*
-        A map of the start indices of the list of particles in a given grid cell.
-```
-key = flatten(posToCell(position));
-start = startIndices[key]; // start index
-end = startIndices[key + 1]; // end index
-for (int i = start; i < end; ++i) {
-    int idx = cellEntries[i];
-    vec3 pos = particles[idx].x;
-    // and so on...
-}
-```
-    **/
     std::vector<int> startIndices;
-    /*
-        A map of flattened grid indices to particle indices. It is accessed like so:
-```
-key = flatten(posToCell(position));
-start = startIndices[key]; // start index
-end = startIndices[key + 1]; // end index
-for (int i = start; i < end; ++i) {
-    int idx = cellEntries[i];
-    vec3 pos = particles[idx].x;
-    // and so on...
-}
-```
-    **/
     std::vector<int> cellEntries;
 };
 

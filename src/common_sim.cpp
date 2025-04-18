@@ -5,7 +5,6 @@ namespace CommonSim {
 std::vector<Particle> particles;
 std::vector<vec4> ps;
 float particleRadius = 0.15f;
-SpatialGrid* grid = new SpatialGrid();
 unsigned particleBuffer = 0;
 unsigned predictedPositionBuffer = 0;
 

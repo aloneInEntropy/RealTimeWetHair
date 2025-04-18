@@ -3,6 +3,8 @@
 namespace Sim {
 
 Simulation::Simulation(HairConfigs hairConfigs, FluidConfig fluidConfig) {
+    grid = new SpatialGrid();
+
     hairParticleStartIdx = 0;
     hair = new Rods::Hair(hairConfigs);
     hairParticleCount = particles.size();
@@ -28,11 +30,9 @@ void Simulation::preprocess() {
     grid->init();  // all particles should be initialised on object creation, but not buffered yet
     fluid->createFramebuffers();
     simulationShader = new Shader("simulation compute step",
-                                  {/* {DIR("Shaders/sim/hair/compute/hair.comp"), GL_COMPUTE_SHADER},
-                                   {DIR("Shaders/sim/fluid/compute/fluid.comp"), GL_COMPUTE_SHADER}, */
-                                   {DIR("Shaders/sim/helper.comp"), GL_COMPUTE_SHADER},
-                                   {DIR("Shaders/sim/kernels.comp"), GL_COMPUTE_SHADER},
-                                   {DIR("Shaders/sim/simulation.comp"), GL_COMPUTE_SHADER}});
+                                  {{DIR("Shaders/sim/compute/helper.comp"), GL_COMPUTE_SHADER},
+                                   {DIR("Shaders/sim/compute/kernels.comp"), GL_COMPUTE_SHADER},
+                                   {DIR("Shaders/sim/compute/simulation.comp"), GL_COMPUTE_SHADER}});
 }
 
 // Load all buffers, excluding Particles and predicted positions
@@ -66,8 +66,6 @@ void Simulation::simulate() {
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 10, hair->predictedRotationBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 11, hair->hairStrandBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 12, hair->restDarbouxBuffer);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 13, hair->vertexStrandMapBuffer);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 14, hair->rodStrandMapBuffer);
 
     simulationShader->use();
 
@@ -109,6 +107,7 @@ void Simulation::simulate() {
     simulationShader->setFloat("gridCellSize", grid->cellSize);
     simulationShader->setInt("simulationTick", simulationTick);
     simulationShader->setInt("clumpingRange", hair->clumpingRange);
+    simulationShader->setFloat("fluidMassDiffusionFactor", fluid->fluidMassDiffusionFactor);
 
     for (int i = 0; i < simulationSubsteps; ++i) {
         for (int stage = 0; stage < N_SIM_STAGES; ++stage) {
@@ -119,10 +118,6 @@ void Simulation::simulate() {
                     glDispatchCompute(ceil((hairParticleCount + fluidParticleCount) / DISPATCH_SIZE) + 1, 1, 1);
                     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
                     break;
-                // case DIFFUSION:
-                //     glDispatchCompute(ceil(fluidParticleCount / DISPATCH_SIZE) + 1, 1, 1);
-                //     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-                //     break;
                 case REP_VOLUME:
                     glDispatchCompute(ceil(porousParticleCount / DISPATCH_SIZE) + 1, 1, 1);
                     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);

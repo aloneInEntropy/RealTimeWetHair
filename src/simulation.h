@@ -9,7 +9,7 @@
 
 using namespace CommonSim;
 namespace Sim {
-
+// todo: move spatial grid class here instead of CommonSim
 class Simulation {
    public:
     Simulation(HairConfigs hairConfigs, FluidConfig fluidConfig);
@@ -57,6 +57,7 @@ class Simulation {
 
     Rods::Hair* hair;
     PBF::Fluid* fluid;
+    SpatialGrid* grid;
     Shader* simulationShader;
     unsigned VAO;
 };

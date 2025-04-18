@@ -14,7 +14,6 @@ layout (local_size_x = LOCAL_SIZE) in;
 // // todo: fluid mass diffusion.
 // // todo: calculate and store wetness in hair particle; reuse padding variable
 // todo: scale bt_k inversely by wetness
-// todo: scale fluid particle alpha based on proximity to porous particles (or adhesion) http://nishitalab.org/user/witawat/resources/papers/wetHair_pg2012.pdf 
 /* ==================================================================== Enums ==================================================================== */
 /* Simulation stages */
 #define APPLY_EXTERNAL_FORCES 0
@@ -41,12 +40,12 @@ layout (local_size_x = LOCAL_SIZE) in;
 
 /* ==================================================================== Structs ==================================================================== */
 struct Particle {
-    vec4 x;  // particle position
-    vec4 v;  // particle velocity
-    float w; // particle inverse mass
-    int t;   // particle type. one of HAIR, PORE, SOLID, or FLUID
-    float d; // particle wetness for HAIR particles. undefined for any non-HAIR particles
-    int pd; // padding
+    vec4 x;   // particle position
+    vec4 v;   // particle velocity
+    float w;  // particle inverse mass
+    int t  ;  // particle type. one of HAIR, SOLID, or FLUID
+    float d;  // hair wetness for HAIR particles. mass diffusion for FLUID particles. undefined for any PORE particles
+    int s;    // strand index for HAIR particles. undefined otherwise
 };
 
 struct PoreData {
@@ -60,10 +59,11 @@ struct PoreData {
 };
 
 struct Rod {
-    vec4 q;  // rod orientation
-    vec4 v;  // rod angular velocity
-    float w; // rod inverse mass
-    int pd1, pd2, pd3; // padding
+    vec4 q;   // rod orientation
+    vec4 v;   // rod velocity
+    float w;  // rod inverse mass
+    int s;    // rod strand index
+    int pd11, pd2; // padding
 };
 
 struct HairStrand {
@@ -138,52 +138,46 @@ layout(std430, binding=12) readonly buffer RestDarbouxVectors {
     vec4 d0s[];
 };
 
-layout(std430, binding=13) readonly buffer VertexToStrandMap {
-    int vertexStrandMap[];
-};
-
-layout(std430, binding=14) readonly buffer RodToStrandMap {
-    int rodStrandMap[];
-};
 
 /* ==================================================================== Uniforms ==================================================================== */
-layout(location = 0) uniform float dt;                  // delta time
-layout(location = 1) uniform int stage;                 // simulation stage
-layout(location = 2) uniform int hairParticleCount;     // hair particle count
-layout(location = 3) uniform int fluidParticleCount;    // fluid particle count
-layout(location = 4) uniform int porousParticleCount;   // porous particle particle count
-layout(location = 5) uniform int rbgs;                  // red-black gauss-seidel order (0 = even, 1 = odd, -1 = ignore)
-layout(location = 6) uniform vec3 bounds;               // simulation bounds
-layout(location = 7) uniform vec3 centre;               // simulation centre
-layout(location = 8) uniform float ss_SOR;              // stretch and shear constraint SOR value
-layout(location = 9) uniform float ss_k;                // stretch and shear constraint stiffness
-layout(location = 10) uniform float bt_SOR;             // bend and twist constraint SOR value
-layout(location = 11) uniform float bt_k;               // bend and twist constraint stiffness
-layout(location = 12) uniform float dn_SOR;             // density constraint SOR value
-layout(location = 13) uniform float dn_k;               // density constraint stiffness
-layout(location = 14) uniform float particleRadius;     // particle radius
-layout(location = 15) uniform float smoothingRadius;    // smoothing radius
-layout(location = 16) uniform float restDensity;        // rest density
-layout(location = 17) uniform float restDensityInv;     // 1 / rest density
-layout(location = 18) uniform float relaxationEpsilon;  // relaxation epsilon
-layout(location = 19) uniform float f_cohesion;         // cohesion coefficient
-layout(location = 20) uniform float f_curvature;        // curvature coefficient
-layout(location = 21) uniform float f_viscosity;        // viscosity coefficient
-layout(location = 22) uniform float f_adhesion;         // adhesion coefficient
-layout(location = 23) uniform float f_porosity;         // porosity coefficient
-layout(location = 24) uniform float f_clumping;         // clumping coefficient
-layout(location = 25) uniform float f_l_drag;           // linear drag
-layout(location = 26) uniform float f_a_drag;           // angular drag
-layout(location = 27) uniform vec3 fv_gravity;          // gravity
-layout(location = 28) uniform vec3 fv_torque;           // torque
-layout(location = 29) uniform mat3 inertia;             // inertia matrix
-layout(location = 30) uniform vec3 up;                  // global up direction
-layout(location = 31) uniform mat4 headTrans;           // head transform
-layout(location = 32) uniform float headRad;            // head radius
-layout(location = 33) uniform int poreSamples;          // pore sampling frequency
-layout(location = 34) uniform float gridCellSize;       // grid cell size (here for clarity; used in helpers.comp)
-layout(location = 35) uniform int simulationTick;       // simulation tick
-layout(location = 36) uniform int clumpingRange = 1;    // range to search for strands to clump with
+layout(location = 0) uniform float dt;                              // delta time
+layout(location = 1) uniform int stage;                             // simulation stage
+layout(location = 2) uniform int hairParticleCount;                 // hair particle count
+layout(location = 3) uniform int fluidParticleCount;                // fluid particle count
+layout(location = 4) uniform int porousParticleCount;               // porous particle particle count
+layout(location = 5) uniform int rbgs;                              // red-black gauss-seidel order (0 = even, 1 = odd, -1 = ignore)
+layout(location = 6) uniform vec3 bounds;                           // simulation bounds
+layout(location = 7) uniform vec3 centre;                           // simulation centre
+layout(location = 8) uniform float ss_SOR;                          // stretch and shear constraint SOR value
+layout(location = 9) uniform float ss_k;                            // stretch and shear constraint stiffness
+layout(location = 10) uniform float bt_SOR;                         // bend and twist constraint SOR value
+layout(location = 11) uniform float bt_k;                           // bend and twist constraint stiffness
+layout(location = 12) uniform float dn_SOR;                         // density constraint SOR value
+layout(location = 13) uniform float dn_k;                           // density constraint stiffness
+layout(location = 14) uniform float particleRadius;                 // particle radius
+layout(location = 15) uniform float smoothingRadius;                // smoothing radius
+layout(location = 16) uniform float restDensity;                    // rest density
+layout(location = 17) uniform float restDensityInv;                 // 1 / rest density
+layout(location = 18) uniform float relaxationEpsilon;              // relaxation epsilon
+layout(location = 19) uniform float f_cohesion;                     // cohesion coefficient
+layout(location = 20) uniform float f_curvature;                    // curvature coefficient
+layout(location = 21) uniform float f_viscosity;                    // viscosity coefficient
+layout(location = 22) uniform float f_adhesion;                     // adhesion coefficient
+layout(location = 23) uniform float f_porosity;                     // porosity coefficient
+layout(location = 24) uniform float f_clumping;                     // clumping coefficient
+layout(location = 25) uniform float f_l_drag;                       // linear drag
+layout(location = 26) uniform float f_a_drag;                       // angular drag
+layout(location = 27) uniform vec3 fv_gravity;                      // gravity
+layout(location = 28) uniform vec3 fv_torque;                       // torque
+layout(location = 29) uniform mat3 inertia;                         // inertia matrix
+layout(location = 30) uniform vec3 up;                              // global up direction
+layout(location = 31) uniform mat4 headTrans;                       // head transform
+layout(location = 32) uniform float headRad;                        // head radius
+layout(location = 33) uniform int poreSamples;                      // pore sampling frequency
+layout(location = 34) uniform float gridCellSize;                   // grid cell size (here for clarity; used in helpers.comp)
+layout(location = 35) uniform int simulationTick;                   // simulation tick
+layout(location = 36) uniform int clumpingRange = 1;                // range to search for strands to clump with
+layout(location = 37) uniform float fluidMassDiffusionFactor = 1;   // fluid mass diffusion factor
 
 /* ==================================================================== Grid ==================================================================== */
 /* Defined in helper.comp */
@@ -236,24 +230,28 @@ int gToF(int i_g) { return i_g - hairParticleCount; } // global index to fluid i
 int fToG(int i_f) { return i_f + hairParticleCount; } // fluid index to global index
 int gToP(int i_g) { return i_g - hairParticleCount - fluidParticleCount; } // global index to porous index
 int pToG(int i_p) { return i_p + hairParticleCount + fluidParticleCount; } // porous index to global index
-int toJ(int i_h) { return i_h - vertexStrandMap[i_h]; } // hair vertex to hair rod
-int toDarboux(int j_h) { return j_h - rodStrandMap[j_h]; } // hair rod to darboux vector
+int toJ(int i_h) { return i_h - particles[i_h].s; } // hair vertex to hair rod
+int toI(int j_h) { return j_h + rods[j_h].s; } // hair vertex to hair rod
+int toDarboux(int j_h) { return j_h - rods[j_h].s; } // hair rod to darboux vector
 
+int getStrandV(int i_h) { return particles[i_h].s; }
+int getStrandR(int j_h) { return rods[j_h].s; }
 // Get the root vertex of the strand containing vertex `i`
-int getRootVertex(int i) { return hairStrands[vertexStrandMap[i]].startVertexIdx; }
+int getRootVertex(int i) { return hairStrands[getStrandV(i)].startVertexIdx; }
 int getRootVertex(uint i) { return getRootVertex(int(i)); }
 
 // Get the tail vertex of the strand containing vertex `i`
-int getTailVertex(int i) { return hairStrands[vertexStrandMap[i]].endVertexIdx; }
+int getTailVertex(int i) { return hairStrands[getStrandV(i)].endVertexIdx; }
 int getTailVertex(uint i) { return getTailVertex(int(i)); }
 
 // Get the root rod of the strand containing rod `j`
-int getRootRod(int j) { return hairStrands[rodStrandMap[j]].startRodIdx; }
+int getRootRod(int j) { return hairStrands[getStrandR(j)].startRodIdx; }
 int getRootRod(uint j) { return getRootRod(int(j)); }
 
 // Get the tail rod of the strand containing rod `j`
-int getTailRod(int j) { return hairStrands[rodStrandMap[j]].endRodIdx; }
+int getTailRod(int j) { return hairStrands[getStrandR(j)].endRodIdx; }
 int getTailRod(uint j) { return getTailRod(int(j)); }
+
 
 vec3 clampAndReset(vec3 v, vec3 lo, vec3 hi, float new_value) {
     vec3 vv = v;
@@ -269,7 +267,6 @@ const float off_K = 0.2; // [Lin14]
 const mat3 K = mat3(perm_K, off_K,off_K, off_K,perm_K,off_K, off_K,off_K,perm_K); // [LAD08]
 const float collisionResolutionSpeed = 10;
 const float maxSpeed = 20;
-const float fluidMassDiffusionFactor = 1;
 
 /* ========================================================================================================================================================= */
 /* ========================================================================================================================================================= */
@@ -622,7 +619,7 @@ void stretchAndShearConstraint(int i_h) {
 
     int j_h = toJ(i_h);
 
-    float l = hairStrands[vertexStrandMap[i_h]].l0;
+    float l = hairStrands[getStrandV(i_h)].l0;
     float w_q = rods[j_h].w;
     float w_v1 = particles[i_g].w;
     float w_v2 = particles[i_g + 1].w;
@@ -694,20 +691,20 @@ void densityConstraint(int i_f) {
                         vec3 pij = vec3(ps[i_g] - ps[j_g]);
                         vec3 cGrad = spikyKernelGrad(pij, smoothingRadius);
 
-                        /* tensile pressure correction [MM13, Eq. 13] */
-                        float corr_k = 0.3;
-                        float corr_q_coeff = 0.3f;
-                        vec3 corr_q = smoothingRadius * corr_q_coeff * vec3(1, 0, 0);
-                        int corr_n = 4;
-                        float p6num = poly6Kernel(pij, smoothingRadius);
-                        float p6den = poly6Kernel(corr_q, smoothingRadius);
-                        float corr = -corr_k * pow(p6num / p6den, corr_n);
+                        // /* tensile pressure correction [MM13, Eq. 13] */
+                        // float corr_k = 0.3;
+                        // float corr_q_coeff = 0.3f;
+                        // vec3 corr_q = smoothingRadius * corr_q_coeff * vec3(1, 0, 0);
+                        // int corr_n = 4;
+                        // float p6num = poly6Kernel(pij, smoothingRadius);
+                        // float p6den = poly6Kernel(corr_q, smoothingRadius);
+                        // float corr = -corr_k * pow(p6num / p6den, corr_n);
                         if (particles[j_g].t == FLUID) {
                             int j_f = gToF(j_g);
                             float jmass = 1.f / particles[j_g].w;
                             
                             /* [MM13, Eq. 13] */
-                            deltaP += cGrad * (lambdas[i_f] + lambdas[j_f] + corr);
+                            deltaP += cGrad * (lambdas[i_f] + lambdas[j_f]);
 
                             /* vorticity confinement [MM13, Eq.16] */
                             vec3 pplus = (imass * vec3(ps[i_g]) + jmass * vec3(ps[j_g])) / (imass + jmass);
@@ -771,15 +768,13 @@ void computeClumpingForce(int i_p) {
                     int j_g = cellEntries[s];
                     if (particles[j_g].t == PORE) {
                         int j_p = gToP(j_g);
-                        if (vertexStrandMap[poreData[j_p].startIndex] == vertexStrandMap[poreData[i_p].startIndex]) continue;
-                        int strandCountI = hairStrands[vertexStrandMap[poreData[i_p].startIndex]].nVertices;
-                        int strandStartI = hairStrands[vertexStrandMap[poreData[i_p].startIndex]].startVertexIdx;
+                        if (getStrandV(poreData[j_p].startIndex) == getStrandV(poreData[i_p].startIndex)) continue;
+                        int strandCountI = hairStrands[getStrandV(poreData[i_p].startIndex)].nVertices;
+                        int strandStartI = hairStrands[getStrandV(poreData[i_p].startIndex)].startVertexIdx;
                         float hairWeightI = (poreData[i_p].startIndex - strandStartI + 1.f) / float(strandCountI);
-                        int strandCountJ = hairStrands[vertexStrandMap[poreData[j_p].startIndex]].nVertices;
-                        int strandStartJ = hairStrands[vertexStrandMap[poreData[j_p].startIndex]].startVertexIdx;
+                        int strandCountJ = hairStrands[getStrandV(poreData[j_p].startIndex)].nVertices;
+                        int strandStartJ = hairStrands[getStrandV(poreData[j_p].startIndex)].startVertexIdx;
                         float hairWeightJ = (poreData[j_p].startIndex - strandStartJ + 1.f) / float(strandCountJ);
-                        // if (hairWeightI < 0.25) continue;
-                        // if (hairWeightJ < 0.25) continue;
                         /* 
                         todo: try different clumping restrictions: 
                         * don't clump with same strand
@@ -797,7 +792,6 @@ void computeClumpingForce(int i_p) {
                         vec3 dff = (ps[i_g] - ps[j_g]).xyz;
                         if (sqLen(dff) == 0) continue;
                         vec3 nforce = avgSat * U * psi_i * psi_j * AAI12TKernelNorm(dff, smoothingRadius); // [Lin14, Eq. 11]
-                        // if (vertexStrandMap[poreData[j_p].startIndex] == vertexStrandMap[poreData[i_p].startIndex]) { force += nforce/10; continue; }
                         force += nforce;
                     }
                 }
@@ -821,7 +815,7 @@ void predict(int i_g) {
         // todo: hairs are only rotating about the head, but do not rotate to point in new direction
         // ? rebuilding all quaternions and Darboux vectors when headTrans is updated (serial; one thead per strand)
         if (i_h == getRootVertex(i_h)) {
-            ps[i_g] = headTrans * hairStrands[vertexStrandMap[i_h]].root;
+            ps[i_g] = headTrans * hairStrands[getStrandV(i_h)].root;
         } else {
             ps[i_g] = particles[i_g].x + particles[i_g].v * dt;
         }

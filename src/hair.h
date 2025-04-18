@@ -15,23 +15,12 @@
 #include "input.h"
 #include "shader.h"
 #include "common_sim.h"
-#include "spatialgrid.h"
 
 #define USE_GPU
 
 using namespace CommonSim;
 namespace Sim {
 namespace Rods {
-
-enum HairDispatchPhase {
-    APPLY_EXTERNAL_FORCES,
-    PREDICT,
-    RESOLVE_COLLISIONS,
-    STRETCH_SHEAR_CONSTRAINT,
-    BEND_TWIST_CONSTRAINT,
-    UPDATE_VELOCITIES,
-    N_STAGES = 6
-};
 
 struct PoreData {
     PoreData(int start, float sstrength, int end, float estrength) : startIndex(start), startStrength(sstrength), endIndex(end), endStrength(estrength) {}
@@ -53,7 +42,8 @@ struct Rod {
     quat q;   // rod orientation
     vec4 v;   // rod velocity
     float w;  // rod inverse mass
-    int pd1, pd2, pd3; // padding
+    int s;    // rod strand index
+    int pd1, pd2; // padding
 };
 
 struct HairStrand {
@@ -86,12 +76,11 @@ class Hair {
     Hair(std::vector<HairConfig> configs) {
         shader = new Shader("hair",
                             {
-                                {DIR("Shaders/sim/hair/render/hair.vert"), GL_VERTEX_SHADER},
-                                {DIR("Shaders/sim/hair/render/hair.frag"), GL_FRAGMENT_SHADER},
-                                {DIR("Shaders/sim/hair/render/hair.tesc"), GL_TESS_CONTROL_SHADER},
-                                {DIR("Shaders/sim/hair/render/hair.tese"), GL_TESS_EVALUATION_SHADER},
+                                {DIR("Shaders/sim/render/hair/hair.vert"), GL_VERTEX_SHADER},
+                                {DIR("Shaders/sim/render/hair/hair.frag"), GL_FRAGMENT_SHADER},
+                                {DIR("Shaders/sim/render/hair/hair.tesc"), GL_TESS_CONTROL_SHADER},
+                                {DIR("Shaders/sim/render/hair/hair.tese"), GL_TESS_EVALUATION_SHADER},
                             });
-        // simulationShader = new Shader("hair compute", DIR("Shaders/hair/simulate.comp"), GL_COMPUTE_SHADER);
 
         numStrands = configs.size();
         int vStart = 0;
@@ -107,12 +96,6 @@ class Hair {
             hairStrands.push_back(hs);
             vStart += nV;
             rStart += nR;
-            for (int j = 0; j < nV; ++j) {
-                vertexStrandMap.push_back(i);
-            }
-            for (int j = 0; j < nR; ++j) {
-                rodStrandMap.push_back(i);
-            }
             int prevIndexCount = indices.size();
             initialiseVertices(i, rotMat);
             initialiseQuaternions(i, rotMat);
@@ -129,11 +112,8 @@ class Hair {
         glDeleteBuffers(1, &particleBuffer);
         glDeleteBuffers(1, &rodBuffer);
         glDeleteBuffers(1, &hairStrandBuffer);
-        glDeleteBuffers(1, &predictedPositionBuffer);
         glDeleteBuffers(1, &predictedRotationBuffer);
         glDeleteBuffers(1, &restDarbouxBuffer);
-        glDeleteBuffers(1, &vertexStrandMapBuffer);
-        glDeleteBuffers(1, &rodStrandMapBuffer);
         glDeleteBuffers(1, &commandBuffer);
         // glDeleteBuffers(1, &commandBufferA);
         glDeleteBuffers(1, &VAO);
@@ -161,12 +141,6 @@ class Hair {
 
         glCreateBuffers(1, &restDarbouxBuffer);
         glNamedBufferStorage(restDarbouxBuffer, sizeof(vec4) * d0s.size(), d0s.data(), GL_MAP_READ_BIT | GL_DYNAMIC_STORAGE_BIT);
-
-        glCreateBuffers(1, &vertexStrandMapBuffer);
-        glNamedBufferStorage(vertexStrandMapBuffer, sizeof(int) * vertexStrandMap.size(), vertexStrandMap.data(), bf);
-
-        glCreateBuffers(1, &rodStrandMapBuffer);
-        glNamedBufferStorage(rodStrandMapBuffer, sizeof(int) * rodStrandMap.size(), rodStrandMap.data(), bf);
 
         glCreateBuffers(1, &poreDataBuffer);
         glNamedBufferStorage(poreDataBuffer, sizeof(PoreData) * poreData.size(), poreData.data(), bf);
@@ -234,6 +208,7 @@ class Hair {
 
             /* Add vertex/particle to this hair strand */
             Particle part = Particle(p, vec3(0), i == 0 ? 0 : 1, HAIR);
+            part.s = strandIdx;
             particles.push_back(part);
             ps.push_back(vec4(p, 0));
 
@@ -276,6 +251,7 @@ class Hair {
             quat q = quatFromVectors(from, to);
             if (j != 0) q *= rods[rStart + j - 1].q;  // each quaternion rotates depending on the previous one
             Rod rod = Rod(q, vec3(0), j == 0 ? 0 : 1);
+            rod.s = strandIdx;
             rods.push_back(rod);
             us.push_back(q);
             from = to;
@@ -291,7 +267,7 @@ class Hair {
     }
 
     void samplePorousParticles() {
-        assert(fluidLoaded && "fluid not loaded");
+        assert(fluidLoaded && "fluid not loaded"); // i had a reason for adding fluids before pores, but i don't remember it ¯\_(ツ)_/¯
         for (int s = 0; s < numStrands; ++s) {
             for (int i = hairStrands[s].startVertexIdx; i < hairStrands[s].startVertexIdx + hairStrands[s].nVertices - 1; ++i) {
                 vec3 a = vec3(particles[i].x);
@@ -372,26 +348,13 @@ class Hair {
 
     void bindKernels() {
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, particleBuffer);
-        // glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, rodBuffer);
-        // glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, hairStrandBuffer);
-        // glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, predictedPositionBuffer);
-        // glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, predictedRotationBuffer);
-        // glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, restDarbouxBuffer);
-        // glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, vertexStrandMapBuffer);
-        // glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, rodStrandMapBuffer);
     }
 
     /* --- Maths functions --- */
     // discrete darboux sign factor
-    float s(int j) {
-        float pos = length2(darboux(j) + vec3(d0s[j - rodStrandMap[j]]));
-        float neg = length2(darboux(j) - vec3(d0s[j - rodStrandMap[j]]));
-        if (neg < pos) return 1;
-        return -1;
-    }
     vec3 darboux(int j) { return Im(qmul(conjugate((us[j])), (us[j + 1]))); }
     vec3 Im(quat q) { return vec3(q.x, q.y, q.z); }
-    // Quaternion multiplication
+    // Quaternion multiplication (test)
     quat qmul(quat p, quat q) {
         quat qo;
         qo.w = p.w * q.w - p.x * q.x - p.y * q.y - p.z * q.z;
@@ -405,8 +368,6 @@ class Hair {
     int numGuideStrands = 0;   // number of guide strands
     int numRenderStrands = 0;  // number of render strands
     std::vector<HairStrand> hairStrands;
-    std::vector<int> vertexStrandMap;  // mapping of vertex index to hairStrand index. e.g., [0, 0, 0, 0, 1, 1, 1, 1, ...]
-    std::vector<int> rodStrandMap;     // mapping of rod index to hairStrand index. e.g., [0, 0, 0, 1, 1, 1, ...]
     Shader* shader;
     Shader* simulationShader;
 
@@ -438,8 +399,6 @@ class Hair {
     unsigned rodBuffer = 0;  // holds Rod struct
     unsigned predictedRotationBuffer = 0;
     unsigned restDarbouxBuffer = 0;
-    unsigned vertexStrandMapBuffer = 0;
-    unsigned rodStrandMapBuffer = 0;
     unsigned hairStrandBuffer = 0;
     unsigned poreDataBuffer = 0;
     // unsigned commandBufferA = 0;

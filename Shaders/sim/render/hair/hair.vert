@@ -1,12 +1,12 @@
 #version 460 core
 
 struct Particle {
-    vec4 x;  // particle position
-    vec4 v;  // particle velocity
-    float w; // particle inverse mass
-    int t;   // particle type. one of HAIR, PORE, SOLID, or FLUID
-    float d; // particle wetness for HAIR particles. undefined for any non-HAIR particles
-    int pd;  // padding
+    vec4 x;   // particle position
+    vec4 v;   // particle velocity
+    float w;  // particle inverse mass
+    int t;    // particle type. one of HAIR, SOLID, or FLUID
+    float d;  // hair wetness for HAIR particles. mass diffusion for FLUID particles. undefined for any PORE particles
+    int s;    // strand index for HAIR particles. undefined otherwise
 };
 
 struct PoreData {
@@ -20,10 +20,11 @@ struct PoreData {
 };
 
 struct Rod {
-    vec4 q;  // rod orientation
-    vec4 v;  // rod angular velocity
-    float w; // rod inverse mass
-    int pd1, pd2, pd3; // padding
+    vec4 q;   // rod orientation
+    vec4 v;   // rod velocity
+    float w;  // rod inverse mass
+    int s;    // rod strand index
+    int pd1, pd2; // padding
 };
 
 struct HairStrand {
@@ -97,14 +98,6 @@ layout(std430, binding=12) readonly buffer RestDarbouxVectors {
     vec4 d0s[];
 };
 
-layout(std430, binding=13) readonly buffer VertexToStrandMap {
-    int vertexStrandMap[];
-};
-
-layout(std430, binding=14) readonly buffer RodToStrandMap {
-    int rodStrandMap[];
-};
-
 out VS_OUT {
     flat uint particleID;
     float vWeight;
@@ -157,18 +150,16 @@ void main() {
     us[0];
     hairStrands[0];
     d0s[0];
-    vertexStrandMap[0];
-    rodStrandMap[0];
     vs_out.particleID = gl_VertexID;
     vec3 up = vec3(0, 1, 0);
-    if (gl_VertexID == hairStrands[vertexStrandMap[gl_VertexID]].endVertexIdx) {
+    if (gl_VertexID == hairStrands[particles[gl_VertexID].s].endVertexIdx) {
         // copy previous tangent
-        vs_out.tangent = normalize(rods[(gl_VertexID - 1) - vertexStrandMap[(gl_VertexID - 1)]].q.xyz);
+        vs_out.tangent = normalize(rods[(gl_VertexID - 1) - particles[(gl_VertexID - 1)].s].q.xyz);
     } else {
-        vs_out.tangent = normalize(rods[gl_VertexID - vertexStrandMap[gl_VertexID]].q.xyz);
+        vs_out.tangent = normalize(rods[gl_VertexID - particles[gl_VertexID].s].q.xyz);
     }
-    int strandCountI = hairStrands[vertexStrandMap[gl_VertexID]].nVertices;
-    int strandStartI = hairStrands[vertexStrandMap[gl_VertexID]].startVertexIdx;
+    int strandCountI = hairStrands[particles[gl_VertexID].s].nVertices;
+    int strandStartI = hairStrands[particles[gl_VertexID].s].startVertexIdx;
     vs_out.vWeight = (gl_VertexID - strandStartI + 1.f) / float(strandCountI);
     // particleID = gl_InstanceID + gl_VertexID;
     // particleID = gl_BaseInstance + gl_VertexID;

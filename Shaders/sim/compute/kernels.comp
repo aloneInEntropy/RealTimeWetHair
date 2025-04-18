@@ -1,5 +1,5 @@
 /* Contains implementations for the kernels used in the simulation. 
-https://cs418.cs.illinois.edu/website/text/sph.html 
+https://cs418.cs.illinois.edu/website/text/sph.html
 todo: add `_KernelV` functions to avoid normalising vectors twice
 */
 
