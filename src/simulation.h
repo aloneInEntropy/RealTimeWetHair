@@ -9,7 +9,6 @@
 
 using namespace CommonSim;
 namespace Sim {
-// todo: move spatial grid class here instead of CommonSim
 class Simulation {
    public:
     Simulation(HairConfigs hairConfigs, FluidConfig fluidConfig);

@@ -111,7 +111,10 @@ extern int porousParticleCount;
 extern int totalParticleCount;
 extern vec3 centre;
 extern vec3 bounds;
+extern vec3 fluidBounds;
+extern vec3 hairBounds;
 extern vec3 fv_gravity;
+extern DWORD totalSimTime;
 
 extern bool hairLoaded;
 extern bool poresLoaded;

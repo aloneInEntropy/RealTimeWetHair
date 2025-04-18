@@ -171,11 +171,11 @@ class Fluid {
 
         thicknessFBO1 = new Framebuffer("fluid thickness", DIR("Shaders/quad.vert"), DIR("Shaders/quad.frag"),
                                         SM::width / thicknessInvScale, SM::height / thicknessInvScale);
-        thicknessFBO1->addTexture("depth colour texture", GL_TEXTURE_2D, GL_RGBA32F, GL_COLOR_ATTACHMENT0);
-        thicknessFBO1->addRenderbuffer("depth render buffer", GL_DEPTH_COMPONENT32, GL_DEPTH_ATTACHMENT);
-        thicknessFBO2 = new Framebuffer("fluid thickness", DIR("Shaders/quad.vert"), DIR("Shaders/quad.frag"), SM::width, SM::height);
-        thicknessFBO2->addTexture("depth colour texture", GL_TEXTURE_2D, GL_RGBA32F, GL_COLOR_ATTACHMENT0);
-        thicknessFBO2->addRenderbuffer("depth render buffer", GL_DEPTH_COMPONENT32, GL_DEPTH_ATTACHMENT);
+        thicknessFBO1->addTexture("thinkness colour texture", GL_TEXTURE_2D, GL_RGBA32F, GL_COLOR_ATTACHMENT0);
+        thicknessFBO1->addRenderbuffer("thickness render buffer", GL_DEPTH_COMPONENT32, GL_DEPTH_ATTACHMENT);
+        thicknessFBO2 = new Framebuffer("blurred fluid thickness", DIR("Shaders/quad.vert"), DIR("Shaders/quad.frag"), SM::width, SM::height);
+        thicknessFBO2->addTexture("thickness colour texture", GL_TEXTURE_2D, GL_RGBA32F, GL_COLOR_ATTACHMENT0);
+        thicknessFBO2->addRenderbuffer("thickness render buffer", GL_DEPTH_COMPONENT32, GL_DEPTH_ATTACHMENT);
         
         blurFBO = new Framebuffer("narrow-range", DIR("Shaders/quad.vert"), DIR("Shaders/sim/render/fluid/narrow_range_filter.frag"), SM::width, SM::height);
         blurFBO->addTexture("blur pass texture", GL_TEXTURE_2D, GL_RGBA32F, GL_COLOR_ATTACHMENT0);
@@ -487,7 +487,7 @@ class Fluid {
     unsigned deltasBuffer = 0;
     unsigned omegasBuffer = 0;
     unsigned commandBuffer = 0;
-    const float thicknessInvScale = 8;  // how much to scale the thickness map down by
+    const float thicknessInvScale = 4;  // how much to scale the thickness map down by
 
     /* Settings */
     float smoothingRadius = 1.4f;

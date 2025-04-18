@@ -101,41 +101,14 @@ layout(std430, binding=12) readonly buffer RestDarbouxVectors {
 out VS_OUT {
     flat uint particleID;
     float vWeight;
-    vec3 tangent;
     vec3 eyeSpacePos;
     vec3 fragPos;
 } vs_out;
-// layout(location = 0) out vec3 eyeSpacePos;
-// layout(location = 1) flat out uint particleID;
-// layout(location = 2) out vec3 tangent;
-// layout(location = 3) out vec3 fragPos;
-// layout(location = 4) out float vWeight;
 
 layout(location = 0) uniform mat4 proj;
 layout(location = 1) uniform mat4 view;
 layout(location = 2) uniform vec3 viewPos;
 layout(location = 3) uniform float nearPlaneHeight;
-
-// Cast a quaternion `q` to a 3x3 matrix. Taken from GLM's implementation
-mat3 toMat3(vec4 q) {
-    mat3 m = mat3(1);
-    float x = q.x;
-    float y = q.y;
-    float z = q.z;
-    float w = q.w;
-
-    m[0][0] = 1 - 2 * (y*y + z*z);
-    m[0][1] = 2 * (x*y + z*w);
-    m[0][2] = 2 * (x*z - w*y);
-    m[1][0] = 2 * (x*y - z*w);
-    m[1][1] = 1 - 2 * (x*x + z*z);
-    m[1][2] = 2 * (y*z + x*w);
-    m[2][0] = 2 * (x*z + y*w);
-    m[2][1] = 2 * (y*z - x*w);
-    m[2][2] = 1 - 2 * (x*x + y*y);
-    
-    return m;
-}
 
 void main() {
     ps[0];
@@ -151,25 +124,13 @@ void main() {
     hairStrands[0];
     d0s[0];
     vs_out.particleID = gl_VertexID;
-    vec3 up = vec3(0, 1, 0);
-    if (gl_VertexID == hairStrands[particles[gl_VertexID].s].endVertexIdx) {
-        // copy previous tangent
-        vs_out.tangent = normalize(rods[(gl_VertexID - 1) - particles[(gl_VertexID - 1)].s].q.xyz);
-    } else {
-        vs_out.tangent = normalize(rods[gl_VertexID - particles[gl_VertexID].s].q.xyz);
-    }
+
     int strandCountI = hairStrands[particles[gl_VertexID].s].nVertices;
     int strandStartI = hairStrands[particles[gl_VertexID].s].startVertexIdx;
     vs_out.vWeight = (gl_VertexID - strandStartI + 1.f) / float(strandCountI);
-    // particleID = gl_InstanceID + gl_VertexID;
-    // particleID = gl_BaseInstance + gl_VertexID;
-    // particleID = gl_BaseVertex + gl_VertexID;
+
 	vec3 pos = particles[gl_VertexID].x.xyz;
     vs_out.fragPos = pos;
 	gl_Position = vec4(pos, 1);
-    // float distToCam = distance(pos, viewPos);
-    // float pointScale = 1 - (distToCam / 1000);
-    // pointScale = clamp(pointScale, 0.1, 0.7);
 	vs_out.eyeSpacePos = vec3(view * vec4(pos, 1));
-	// gl_PointSize = (nearPlaneHeight * pointScale) / gl_Position.w;
 }

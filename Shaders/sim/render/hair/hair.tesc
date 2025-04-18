@@ -5,7 +5,6 @@ layout (vertices = 2) out; // the inner line of the spline segment
 in VS_OUT {
     flat uint particleID;
     float vWeight;
-    vec3 tangent;
     vec3 eyeSpacePos;
     vec3 fragPos;
 } vs_out[];
@@ -13,7 +12,6 @@ in VS_OUT {
 out CS_OUT {
     flat uint particleID;
     float vWeight;
-    vec3 tangent;
     vec3 eyeSpacePos;
     vec3 fragPos;
 } cs_out[];
@@ -35,7 +33,6 @@ void main() {
 
     cs_out[gl_InvocationID].particleID = vs_out[gl_InvocationID].particleID;
     cs_out[gl_InvocationID].vWeight = vs_out[gl_InvocationID].vWeight;
-    cs_out[gl_InvocationID].tangent = vs_out[gl_InvocationID].tangent;
     cs_out[gl_InvocationID].eyeSpacePos = vs_out[gl_InvocationID].eyeSpacePos;
     cs_out[gl_InvocationID].fragPos = vs_out[gl_InvocationID].fragPos;
 }

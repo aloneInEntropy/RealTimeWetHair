@@ -35,7 +35,9 @@ void init() {
     sim = new Sim::Simulation(hs, fconfig);
     sim->hair->headTrans = translate(mat4(1), headStartPos);
 
-    SM::camera->lookAt(headStartPos + vec3(0, 30, 0));
+    SM::camera->setPosition({120, 48.5, 52});
+    SM::camera->lookAt(normalize(vec3(0.342, -0.307, 0.888)));
+    // SM::camera->lookAt(headStartPos + vec3(0, 30, 0));
     glPointSize(8.0);
     glLineWidth(1);
 
@@ -94,7 +96,7 @@ void displayUI() {
     auto io = ImGui::GetIO();
     if (ImGui::CollapsingHeader("Debug")) {
         if (ImGui::TreeNodeEx("Info", ImGuiTreeNodeFlags_SpanAvailWidth)) {
-            ImGui::Text("Average FPS: %.1f (%.3f ms/frame)", io.Framerate, 1000.0f / io.Framerate);
+            ImGui::Text("Average FPS: %.1f (%.3f ms/frame)", io.Framerate, SM::delta);
             ImGui::Text("Mouse Position: %.0f, %.0f", Input::mouse.x, Input::mouse.y);
             ImGui::Checkbox("Camera Mode", &SM::cfg.isCamMode);
             UI::Help(
@@ -268,6 +270,7 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
     if (!io.WantCaptureKeyboard) {
         Input::updateKey(key, action);
         if (Input::isKeyPressed(Key::ESCAPE)) {
+            printf("%u", CommonSim::totalSimTime / CommonSim::simulationTick);
             glfwSetWindowShouldClose(window, true);
         }
         if (Input::isKeyJustReleased(Key::LEFT_ALT) && Input::windowFocused) {

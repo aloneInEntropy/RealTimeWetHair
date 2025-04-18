@@ -109,6 +109,7 @@ void Simulation::simulate() {
     simulationShader->setInt("clumpingRange", hair->clumpingRange);
     simulationShader->setFloat("fluidMassDiffusionFactor", fluid->fluidMassDiffusionFactor);
 
+    DWORD curr_time = timeGetTime();
     for (int i = 0; i < simulationSubsteps; ++i) {
         for (int stage = 0; stage < N_SIM_STAGES; ++stage) {
             simulationShader->setInt("stage", stage);
@@ -179,6 +180,8 @@ void Simulation::simulate() {
             }
         }
     }
+    totalSimTime += timeGetTime() - curr_time;
+    // printf("%lu\n", totalSimTime);
 
     simulationShader->rmv();
     glBindVertexArray(0);

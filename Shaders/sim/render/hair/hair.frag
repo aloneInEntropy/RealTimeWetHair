@@ -22,10 +22,10 @@ layout(std430, binding = 0) buffer Particles {
 
 layout(location = 0) out vec4 FragColour;
 layout(location = 1) out vec4 DepthColour;
+
 in ES_OUT {
     flat uint particleID;
     float vWeight;
-    vec3 tangent;
     vec3 eyeSpacePos;
     vec3 fragPos;
 } es;
@@ -43,7 +43,6 @@ layout(location = 7) uniform vec3 headPos;
 layout(location = 8) uniform PBRMaterial pbrMaterial;
 
 vec3 CalcDirLight(vec3 lightDir, vec3 normal, vec3 viewDir);
-float chi(float x);
 float GGX_D(vec3 normal, vec3 halfwayDir, float roughness);
 float GGX_G_Schlick(vec3 normal, vec3 viewDir, float roughness);
 float GGX_G(vec3 normal, vec3 viewDir, vec3 lightDir, float roughness);
@@ -78,7 +77,8 @@ void main() {
 	vec3 viewDir = normalize(viewPos - es.fragPos);
 
 	// directional lights
-	vec3 result = pbrMaterial.albedo * 0.2 + CalcDirLight(vec3(-1, -1, 0), norm, viewDir);
+	vec3 L = vec3(0, -1, 0);
+	vec3 result = pbrMaterial.albedo * 0.2 + CalcDirLight(L, norm, viewDir);
 
 	vec3 ev = normalize(es.fragPos - viewPos);
 	float ff = abs(dot(ev, norm));
@@ -110,11 +110,10 @@ vec3 CalcDirLight(vec3 lightDir, vec3 N, vec3 V) {
 
 	vec3 BRDF = (D * G * F) / (4.0 * max(dot(N, V), 0.0) * NoL + 0.0001);
 	vec3 I = normalize(es.fragPos - viewPos);
-	float ior = 1;
 	
 	vec3 kS = F;
-	vec3 kD = (vec3(1) - kS) * ior * ior / /* PI *  */vec3(.5);
-    kD = (vec3(1) - kS) * (1 - pbrMaterial.metalness) / /* PI *  */vec3(.5);
+	vec3 kD = (vec3(1) - kS) / vec3(.5);
+    kD = (vec3(1) - kS) * (1 - pbrMaterial.metalness) / vec3(.5);
 	return (kD + BRDF * vec3(0.8)) * radiance * NoL;
 }
 
@@ -147,8 +146,4 @@ float GGX_G(vec3 normal, vec3 viewDir, vec3 lightDir, float roughness) {
 // fresnel equation (Schlick's approximation)
 vec3 fresnel(float cos_theta, vec3 F0) {
 	return F0 + (1-F0) * pow(clamp(1 - cos_theta, 0, 1), fresnelPower * wetnessSub);
-}
-
-float chi(float x) {
-  return x > 0 ? 1 : 0;
 }

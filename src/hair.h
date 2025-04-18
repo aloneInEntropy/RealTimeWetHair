@@ -372,7 +372,7 @@ class Hair {
     Shader* simulationShader;
 
     /* --- Other --- */
-    float renderHeadRadius = 25;
+    float renderHeadRadius = 20;
 
     /* --- Physics buffers --- */
     vec3 torque{0};      // hair torque
@@ -420,7 +420,7 @@ class Hair {
 
     /* Hair */
     mat4 headTrans = translate(mat4(1), vec3(150, 6, 150));
-    vec4 hairColour = vec4(42, 25, 5, 255) / 255.f;
+    vec4 hairColour = vec4(234, 192, 142, 255) / 255.f;
     float metalness = 0.1;
     float roughness = 0.9;
     float fresnelExponent = 5;

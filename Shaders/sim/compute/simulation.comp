@@ -414,6 +414,7 @@ void computePorousVolume(int i_p) {
                 int end = startIndices[key].startIndex + startIndices[key].particlesInBucket;
                 for (int s = start; s < end; ++s) {
                     int j_g = cellEntries[s];
+                    if (sqLen(vec3(ps[i_g] - ps[j_g])) > smoothingRadius*smoothingRadius) continue;
                     if (particles[j_g].t != PORE) continue;
                     volume += poly6Kernel(vec3(ps[i_g] - ps[j_g]), smoothingRadius);
                 }
@@ -449,6 +450,7 @@ void computeDensity(int i_fp) {
                 int end = startIndices[key].startIndex + startIndices[key].particlesInBucket;
                 for (int s = start; s < end; ++s) {
                     int j_g = cellEntries[s];
+                    if (sqLen(vec3(ps[i_g] - ps[j_g])) > smoothingRadius*smoothingRadius) continue;
                     if (particles[j_g].t == FLUID) {
                         density += (1.f / particles[j_g].w) * poly6Kernel(vec3(ps[i_g] - ps[j_g]), smoothingRadius);
                     }
@@ -483,6 +485,7 @@ void computeViscosity(int i_f) {
                 int end = startIndices[key].startIndex + startIndices[key].particlesInBucket;
                 for (int s = start; s < end; ++s) {
                     int j_g = cellEntries[s];
+                    if (sqLen(vec3(ps[i_g] - ps[j_g])) > smoothingRadius*smoothingRadius) continue;
                     vec3 vji = vec3(particles[j_g].v - particles[i_g].v);
                     vec3 vij = vec3(particles[i_g].v - particles[j_g].v);
                     vec3 xij = vec3(ps[i_g] - ps[j_g]);
@@ -537,6 +540,7 @@ vec3 calcFluidConstraintGrad(int i_g, int j_g) {
                     int end = startIndices[key].startIndex + startIndices[key].particlesInBucket;
                     for (int s = start; s < end; ++s) {
                         int k_g = cellEntries[s];
+                        if (sqLen(vec3(ps[i_g] - ps[k_g])) > smoothingRadius*smoothingRadius) continue;
                         if (particles[k_g].t != FLUID) continue;
                         cGrad += (1.f / particles[k_g].w) * spikyKernelGrad(vec3(ps[i_g] - ps[k_g]), smoothingRadius);
                     }
@@ -576,7 +580,7 @@ void computeFluidAuxillaries(int i_f) {
                 int end = startIndices[key].startIndex + startIndices[key].particlesInBucket;
                 for (int s = start; s < end; ++s) {
                     int j_g = cellEntries[s];
-                    if (sqLen(vec3  (ps[i_g] - ps[j_g])) > smoothingRadius*smoothingRadius) continue;
+                    if (sqLen(vec3(ps[i_g] - ps[j_g])) > smoothingRadius*smoothingRadius) continue;
                     if (particles[j_g].t == PORE) { nearPore = true; continue; }
                     if (particles[j_g].t != FLUID) continue;
 
@@ -763,6 +767,7 @@ void computeClumpingForce(int i_p) {
                 int end = startIndices[key].startIndex + startIndices[key].particlesInBucket;
                 for (int s = start; s < end; ++s) {
                     int j_g = cellEntries[s];
+                    if (sqLen(vec3(ps[i_g] - ps[j_g])) > smoothingRadius*smoothingRadius) continue;
                     if (particles[j_g].t == PORE) {
                         int j_p = gToP(j_g);
                         if (getStrandV(poreData[j_p].startIndex) == getStrandV(poreData[i_p].startIndex)) continue;
