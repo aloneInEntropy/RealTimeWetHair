@@ -1,0 +1,15 @@
+# Real-Time Wet Hair Simulation using Afro-Textured Hair
+By Iris Onwa
+
+This repository is the implementation of my thesis by the above name, submitted for my Master's thesis at Trinity College Dublin.
+
+It features an implementation of 
+- Position and Orientation Based Cosserat Rods by Kugelstadt and Schömer,
+- Position Based Fluids by Macklin and Müller, and
+- Coupling Hair with Smoothed Particle Hydrodynamics Fluids by Lin
+
+It was submitted on April 18th, 2025. (Currently ungraded).
+
+The code is implemented using OpenGL 4.6 and C++. GLFW was used for windowing and GLAD for headers. I also used Dear ImGui for the GUI.
+
+repo will be cleaned up over time
