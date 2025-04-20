@@ -13,3 +13,6 @@ It was submitted on April 18th, 2025. (Currently ungraded).
 The code is implemented using OpenGL 4.6 and C++. GLFW was used for windowing and GLAD for headers. I also used Dear ImGui for the GUI.
 
 repo will be cleaned up over time
+
+## Simulation
+The simulation is run using compute shaders in [Shaders/sim/compute/](https://github.com/aloneInEntropy/RealTimeWetHair/tree/main/Shaders/sim). I used atomic bump allocation for creating a fixed grid and searching for nearby neighbours. 
