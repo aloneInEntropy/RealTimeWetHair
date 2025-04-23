@@ -4,9 +4,9 @@ By Iris Onwa
 This repository is the implementation of my thesis by the above name, submitted for my Master's thesis at Trinity College Dublin.
 
 It features an implementation of 
-- Position and Orientation Based Cosserat Rods by Kugelstadt and Schömer,
-- Position Based Fluids by Macklin and Müller, and
-- Coupling Hair with Smoothed Particle Hydrodynamics Fluids by Lin
+- Position and Orientation Based Cosserat Rods by Kugelstadt and Schömer (2016),
+- Position Based Fluids by Macklin and Müller (2013), and
+- Coupling Hair with Smoothed Particle Hydrodynamics Fluids by Lin (2014)
 
 It was submitted on April 18th, 2025. (Currently ungraded).
 
