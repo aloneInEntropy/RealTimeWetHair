@@ -1,7 +1,8 @@
 # Real-Time Wet Hair Simulation using Afro-Textured Hair
-By Iris Onwa
 
 ![An image of wet, afro-textured hair. The hair is clumped up and darkened in wet areas.](docs/image.png)
+
+By Iris Onwa
 
 This repository is the implementation of my thesis by the above name, submitted for my Master's thesis at Trinity College Dublin.
 
