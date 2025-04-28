@@ -15,6 +15,8 @@ It was submitted on April 18th, 2025. (Currently ungraded).
 
 The code is implemented using OpenGL 4.6 and C++. GLFW was used for windowing and GLAD for headers. I also used Dear ImGui for the GUI.
 
+[Read the thesis here.](docs/thesis.pdf)
+
 The version of this repo that was submitted is available at <https://github.com/irisonwa/RealTimeWetHair/tree/b1c7393d38a897683c609c5c499475d405f57956>
 
 repo will be cleaned up over time
