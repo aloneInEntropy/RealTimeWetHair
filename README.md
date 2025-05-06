@@ -2,8 +2,7 @@
 
 ![An image of wet, afro-textured hair. The hair is clumped up and darkened in wet areas.](docs/image.png)
 
-<!-- <video src="docs/dripping.mp4" controls > Your browser (or GitHub?) does not support the `video` tag in Markdown. </video> -->
-![A close-up video of water dripping from hair.](docs/dripping.mp4)
+https://github.com/user-attachments/assets/3e4359df-8403-4be9-8139-d7132138b2aa
 
 By Iris Onwa
 
