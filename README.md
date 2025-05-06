@@ -4,8 +4,6 @@
 
 https://github.com/user-attachments/assets/3e4359df-8403-4be9-8139-d7132138b2aa
 
-By Iris Onwa
-
 This repository is the implementation of my thesis by the above name, submitted for my Master's thesis at Trinity College Dublin.
 
 It features an implementation of 
@@ -17,17 +15,26 @@ It was submitted on April 18th, 2025. (Currently ungraded).
 
 The code is implemented using OpenGL 4.6 and C++. GLFW was used for windowing and GLAD for headers. I also used Dear ImGui for the GUI.
 
-[Read the thesis here.](docs/thesis.pdf)
+The thesis is available at [docs/thesis.pdf](docs/thesis.pdf).
 
-The version of this repo that was submitted is available at <https://github.com/irisonwa/RealTimeWetHair/tree/b1c7393d38a897683c609c5c499475d405f57956>
+The version of this repo that was submitted is available at https://github.com/irisonwa/RealTimeWetHair/tree/submission
 
-repo will be cleaned up over time
+A demonstration of the project is available on YouTube: https://youtu.be/R62dWHfgbQg
 
-## Simulation
+### Abstract
 
-Full video demonstration: 
+The upkeep of afro-textured hair has had a profound impact on African and coily-haired people, requiring constant care and preening to ensure it remains healthy. This comes through the use of various oils, conditioners, and shampoos. Afro-textured hair is also much drier and porous than its counterparts, which leads to interesting interactions with these fluids. However, simulations of these interactions are sparse. Simulating afro-textured hair accurately has an impact on performance, as it tends to be far denser than straighter hair, leading to constant collision handling. Therefore, any simulation involving both hair and fluids must make sacrifices in accuracy for performance. These sacrifices are great when implemented in real-time applications, such as video games. We present an application that showcases the interactions of afro-textured hair and fluids in real-time while minimising a loss in accuracy. We will use the Position-Based Dynamics (PBD) framework, which trades some accuracy for performance, for both the hair and fluid simulations. Cosserat theory will be used to implement angular constraints to ensure hair strands remain coily. To boost the application’s performance and obtain more accuracy, we will implement both simulations on the GPU, allowing for immense parallelisation. Our application can be run on low-end consumer devices such as laptops, proving its low performance impact. Future work lies in improving the accuracy of the simulation while balancing performance.
 
-https://youtu.be/R62dWHfgbQg
+### Details
+
+This thesis was written to determine the efficacy of wet, afro-textured hair simulations in real-time applications such as video games. Ultimately, I came to the conclusion that, using the method I implemented, it is possible, although a "low-end" laptop likely won't be sufficient for a relatively dense field of hair.
+
+The simulation is run on the GPU using [compute shaders](https://github.com/aloneInEntropy/RealTimeWetHair/tree/main/Shaders/sim). I used atomic bump allocation (see [Section 3.7.3](docs/thesis.pdf) in the thesis) for creating a fixed grid and searching for nearby neighbours. Hair-fluid interactions were implemented through the use of *porous particles*, which were sampled between each hair vertex. They underwent separate physics interactions with fluids and applied their velocities to their adjacent hair vertices.
+
+Hair clumps when wet, so the end result is that nearby strands are attracted to each other, resulting in the desired clumped look. Fluid density and saturation and hair porosity and density are used to determine wetness. As water diffuses out of the hair, they gradually return to their rest shape.
+
+Fluid diffusion is handled by gradually increasing the force of gravity of fluid particles near porous particles. The amount that gravity increases is dependent on the fluid density, so small droplets of fluid particles will take longer to diffuse out of hair strands than larger droplets. This, coupled with an adhesion force, allows for a semi-realistic dripping behaviour. Fluid slowly drips out of the hair in real-time, and the hair slowly returns to normal.
+
 
 ### How to run
 
@@ -78,17 +85,3 @@ for (int i = 0; i < largeHead->vertexData.size(); ++i) {
     }
 }
 ```
-
-### Abstract
-
-The upkeep of afro-textured hair has had a profound impact on African and coily-haired people, requiring constant care and preening to ensure it remains healthy. This comes through the use of various oils, conditioners, and shampoos. Afro-textured hair is also much drier and porous than its counterparts, which leads to interesting interactions with these fluids. However, simulations of these interactions are sparse. Simulating afro-textured hair accurately has an impact on performance, as it tends to be far denser than straighter hair, leading to constant collision handling. Therefore, any simulation involving both hair and fluids must make sacrifices in accuracy for performance. These sacrifices are great when implemented in real-time applications, such as video games. We present an application that showcases the interactions of afro-textured hair and fluids in real-time while minimising a loss in accuracy. We will use the Position-Based Dynamics (PBD) framework, which trades some accuracy for performance, for both the hair and fluid simulations. Cosserat theory will be used to implement angular constraints to ensure hair strands remain coily. To boost the application’s performance and obtain more accuracy, we will implement both simulations on the GPU, allowing for immense parallelisation. Our application can be run on low-end consumer devices such as laptops, proving its low performance impact. Future work lies in improving the accuracy of the simulation while balancing performance.
-
-### Details
-
-This thesis was written to determine the efficacy of wet, afro-textured hair simulations in real-time applications such as video games. Ultimately, I came to the conclusion that, using the method I implemented, it is possible, although a "low-end" laptop likely won't be sufficient for a relatively dense field of hair.
-
-The simulation is run on the GPU using [compute shaders](https://github.com/aloneInEntropy/RealTimeWetHair/tree/main/Shaders/sim). I used atomic bump allocation (see [Section 3.7.3](docs/thesis.pdf) in the thesis) for creating a fixed grid and searching for nearby neighbours. Hair-fluid interactions were implemented through the use of *porous particles*, which were sampled between each hair vertex. They underwent separate physics interactions with fluids and applied their velocities to their adjacent hair vertices.
-
-Hair clumps when wet, so the end result is that nearby strands are attracted to each other, resulting in the desired clumped look. Fluid density and saturation and hair porosity and density are used to determine wetness. As water diffuses out of the hair, they gradually return to their rest shape.
-
-Fluid diffusion is handled by gradually increasing the force of gravity of fluid particles near porous particles. The amount that gravity increases is dependent on the fluid density, so small droplets of fluid particles will take longer to diffuse out of hair strands than larger droplets. This, coupled with an adhesion force, allows for a semi-realistic dripping behaviour. Fluid slowly drips out of the hair in real-time, and the hair slowly returns to normal.
