@@ -2,6 +2,9 @@
 
 ![An image of wet, afro-textured hair. The hair is clumped up and darkened in wet areas.](docs/image.png)
 
+<!-- <video src="docs/dripping.mp4" controls > Your browser (or GitHub?) does not support the `video` tag in Markdown. </video> -->
+![A close-up video of water dripping from hair.](docs/dripping.mp4)
+
 By Iris Onwa
 
 This repository is the implementation of my thesis by the above name, submitted for my Master's thesis at Trinity College Dublin.
@@ -23,7 +26,9 @@ repo will be cleaned up over time
 
 ## Simulation
 
-Full video demonstration: <https://youtu.be/z68gn46AZ0U>
+Full video demonstration: 
+
+https://youtu.be/R62dWHfgbQg
 
 ### How to run
 
@@ -37,7 +42,7 @@ To run this project, you will require:
 
 First, build the project using CMake. This project was built using GCC on Windows through [MSYS2](https://www.msys2.org/), so it is build from the project directory like so:
 ```
-cmake . -G MinGW Makefiles -DCMAKE_CXX_COMPILER = C:/msys64/mingw64/bin/g++.exe -DCMAKE_C_COMPILER = C:/msys64/mingw64/bin/gcc.exe -B build
+cmake . -G "MinGW Makefiles" -DCMAKE_CXX_COMPILER=C:/msys64/mingw64/bin/g++.exe -DCMAKE_C_COMPILER=C:/msys64/mingw64/bin/gcc.exe -B build
 ```
 then
 ```
@@ -54,7 +59,7 @@ The number of hair strands must be determined in the program before the applicat
 
 As an example, to create a head with a radius of 20 units:
 1. Configure the head shape in Blender.
-    1. In the [guidehead](models/guidehead/guidehead.blend) and [largehead](models/largehead/largehead.blend) files, create an Isosphere. You can control the number of hair strands here using `Subdivisions` option. For reference, 5 subdivisons results in 1,365 strands and 6 subdivisions results in 5,287 strands. The radius can be changed by either setting the `Radius` option upon creation, or by leaving it as 1 and scaling the object.
+    1. In the [guidehead](Models/guidehead/guidehead.blend) and [largehead](Models/largehead/largehead.blend) files, create an Isosphere. You can control the number of hair strands here using `Subdivisions` option. For reference, 5 subdivisons results in 1,365 strands and 6 subdivisions results in 5,287 strands. The radius can be changed by either setting the `Radius` option upon creation, or by leaving it as 1 and scaling the object.
     2. Normals must be merged to prevent multiple hair strands generating from the same location, which would decreate the different locations strands can be generated in. After the sphere is created, switch to `Edit Mode` and go to `Mesh -> Normals -> Merge` to merge split-vertex normals. 
     3. Create a simple texture and export as a separated GLTF file.
 2. Set the head radius in the [`Hair` class](https://github.com/irisonwa/RealTimeWetHair/blob/main/src/hair.h#L375): 
