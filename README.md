@@ -11,7 +11,7 @@ It features an implementation of
 - Position Based Fluids by Macklin and Müller (2013), and
 - Coupling Hair with Smoothed Particle Hydrodynamics Fluids by Lin (2014)
 
-It was submitted on April 18th, 2025. (Currently ungraded).
+It was submitted on April 18th, 2025 and received a grade of 75% (distinction).
 
 The code is implemented using OpenGL 4.6 and C++. GLFW was used for windowing and GLAD for headers. I also used Dear ImGui for the GUI.
 
